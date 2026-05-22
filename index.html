@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cyan Cellular Core</title>
+  <link rel="icon" href="data:," />
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000000;
+      color: rgba(255, 255, 255, 0.82);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #app,
+    canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #statusOverlay {
+      position: fixed;
+      left: 16px;
+      top: 14px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      max-width: min(420px, calc(100vw - 32px));
+      pointer-events: none;
+      font-size: 12px;
+      line-height: 1.2;
+      letter-spacing: 0;
+      text-shadow: 0 0 14px rgba(0, 0, 0, 0.95);
+    }
+
+    #statusDot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: #00eaff;
+      box-shadow: 0 0 12px #00eaff, 0 0 24px rgba(0, 234, 255, 0.5);
+    }
+
+    #statusText {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #gestureText {
+      color: rgba(255, 255, 255, 0.48);
+    }
+
+    #spaceTag {
+      position: fixed;
+      right: 14px;
+      top: 12px;
+      z-index: 4;
+      width: 116px;
+      padding: 8px 9px 7px;
+      pointer-events: none;
+      color: rgba(232, 252, 255, 0.88);
+      background:
+        linear-gradient(90deg, rgba(0, 234, 255, 0.18), transparent 38%),
+        rgba(0, 13, 20, 0.44);
+      border-left: 2px solid rgba(0, 234, 255, 0.8);
+      box-shadow: 0 0 18px rgba(0, 234, 255, 0.13);
+      text-shadow: 0 0 10px rgba(0, 234, 255, 0.35);
+    }
+
+    #spaceTagTitle {
+      font-size: 11px;
+      line-height: 1.1;
+      font-weight: 600;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    #spaceState {
+      margin-top: 5px;
+      font-size: 9px;
+      line-height: 1.1;
+      letter-spacing: 0;
+      color: rgba(143, 237, 255, 0.76);
+      white-space: nowrap;
+    }
+
+    #video {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      z-index: 2;
+      width: min(17vw, 190px);
+      min-width: 108px;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      opacity: 0.18;
+      transform: scaleX(-1);
+      background: #000000;
+      border: 1px solid rgba(0, 234, 255, 0.14);
+    }
+
+    @media (max-width: 700px) {
+      #statusOverlay {
+        left: 12px;
+        top: 12px;
+        max-width: calc(100vw - 140px);
+        font-size: 11px;
+      }
+
+      #video {
+        width: 108px;
+        right: 10px;
+        bottom: 10px;
+      }
+
+      #spaceTag {
+        right: 10px;
+        top: 10px;
+        width: 104px;
+        padding: 7px 8px 6px;
+      }
+
+      #spaceTagTitle {
+        font-size: 10px;
+      }
+
+      #spaceState {
+        font-size: 8px;
+      }
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <main id="app" aria-label="Interactive cyan cellular core particle system"></main>
+  <video id="video" playsinline muted></video>
+
+  <div id="statusOverlay" aria-live="polite">
+    <span id="statusDot"></span>
+    <span id="statusText">Camera loading</span>
+    <span id="gestureText">Idle</span>
+  </div>
+
+  <div id="spaceTag" aria-live="polite">
+    <div id="spaceTagTitle">吴邪space</div>
+    <div id="spaceState">空间状态 待机</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+    import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+
+    const CORE_COUNT = 12000;
+    const SHELL_MAX = 62000;
+    const SHELL_MIN = 38000;
+    const COMPACT_SHELL = 24000;
+    const COLLAPSE_SHELL = 36000;
+    const GIANT_SHELL = 52000;
+    const CAMERA_Z = 9.5;
+    const CAMERA_EXPANDED_Z = 6.25;
+    const TWO_PI = Math.PI * 2;
+    const LANDMARK_COUNT = 21;
+    const LANDMARK_ALPHA = 0.26;
+    const OPEN_ALPHA = 0.18;
+    const ROTATION_ALPHA = 0.24;
+    const TIP_INDICES = [4, 8, 12, 16, 20];
+    const PALM_MIN_OPEN = 0.3;
+    const MIDDLE_OPEN = 0.7;
+    const MIDDLE_RANGE = 0.24;
+    const GIANT_FADE_START = 0.34;
+    const GIANT_FADE_END = 0.54;
+    const FIST_OPENNESS = 0.28;
+
+    class CellularCoreParticles {
+      constructor() {
+        this.container = document.getElementById("app");
+        this.video = document.getElementById("video");
+        this.statusText = document.getElementById("statusText");
+        this.gestureText = document.getElementById("gestureText");
+        this.statusDot = document.getElementById("statusDot");
+        this.spaceState = document.getElementById("spaceState");
+
+        this.clock = new THREE.Clock();
+        this.activeShell = SHELL_MAX;
+        this.visibleShell = SHELL_MAX;
+        this.smoothedFps = 60;
+        this.frameCounter = 0;
+        this.fpsTimer = 0;
+        this.qualityCooldown = 0;
+
+        this.landmarksReady = false;
+        this.landmarks = new Float32Array(LANDMARK_COUNT * 3);
+        this.handVisible = false;
+        this.lastHandTime = 0;
+
+        this.targetOpen = 0.5;
+        this.smoothedOpen = 0.5;
+        this.targetCollapse = 0;
+        this.collapse = 0;
+        this.targetGiant = 0;
+        this.giant = 0;
+        this.targetYaw = 0;
+        this.targetPitch = 0;
+        this.yaw = 0;
+        this.pitch = 0;
+        this.baseRotation = 0;
+        this.gestureMode = "Idle";
+        this.fistLocked = false;
+        this.lastYawX = null;
+        this.lastPitchY = null;
+        this.lastScaleGestureTime = 0;
+
+        this.manualPointerFallback = false;
+
+        this.initThree();
+        this.initParticles();
+        this.initPostProcessing();
+        this.initStats();
+        this.initHands();
+        this.bindEvents();
+        this.animate();
+
+        window.cellularCore = this;
+        window.cyanVortexDisk = this;
+        window.gestureParticleVortex = this;
+      }
+
+      initThree() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x000000);
+
+        this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        this.camera.position.z = CAMERA_Z;
+
+        this.root = new THREE.Group();
+        this.scene.add(this.root);
+
+        this.renderer = new THREE.WebGLRenderer({
+          antialias: false,
+          alpha: false,
+          powerPreference: "high-performance"
+        });
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.container.appendChild(this.renderer.domElement);
+      }
+
+      initParticles() {
+        this.core = this.createParticleSet(CORE_COUNT);
+        this.shell = this.createParticleSet(SHELL_MAX);
+        this.initCoreParticles();
+        this.initShellParticles();
+
+        this.particleMaterial = this.createParticleMaterial();
+
+        this.coreGeometry = new THREE.BufferGeometry();
+        this.coreGeometry.setAttribute("position", new THREE.BufferAttribute(this.core.positions, 3));
+        this.coreGeometry.setAttribute("aColor", new THREE.BufferAttribute(this.core.colors, 3));
+        this.coreGeometry.setAttribute("aSize", new THREE.BufferAttribute(this.core.sizes, 1));
+        this.coreGeometry.setAttribute("aAlpha", new THREE.BufferAttribute(this.core.alphas, 1));
+
+        this.shellGeometry = new THREE.BufferGeometry();
+        this.shellGeometry.setAttribute("position", new THREE.BufferAttribute(this.shell.positions, 3));
+        this.shellGeometry.setAttribute("aColor", new THREE.BufferAttribute(this.shell.colors, 3));
+        this.shellGeometry.setAttribute("aSize", new THREE.BufferAttribute(this.shell.sizes, 1));
+        this.shellGeometry.setAttribute("aAlpha", new THREE.BufferAttribute(this.shell.alphas, 1));
+        this.shellGeometry.setDrawRange(0, this.activeShell);
+
+        this.corePoints = new THREE.Points(this.coreGeometry, this.particleMaterial);
+        this.shellPoints = new THREE.Points(this.shellGeometry, this.particleMaterial);
+        this.root.add(this.shellPoints);
+        this.root.add(this.corePoints);
+      }
+
+      createParticleSet(count) {
+        return {
+          positions: new Float32Array(count * 3),
+          velocities: new Float32Array(count * 3),
+          colors: new Float32Array(count * 3),
+          sizes: new Float32Array(count),
+          alphas: new Float32Array(count),
+          radius: new Float32Array(count),
+          targetRadius: new Float32Array(count),
+          compactRadius: new Float32Array(count),
+          collapseRadius: new Float32Array(count),
+          theta: new Float32Array(count),
+          phi: new Float32Array(count),
+          drift: new Float32Array(count),
+          phase: new Float32Array(count),
+          brightness: new Float32Array(count),
+          baseSize: new Float32Array(count),
+          baseAlpha: new Float32Array(count),
+          band: new Float32Array(count)
+        };
+      }
+
+      initCoreParticles() {
+        const p = this.core;
+        for (let i = 0; i < CORE_COUNT; i++) {
+          const i3 = i * 3;
+          const radius = Math.pow(Math.random(), 0.5) * 0.84;
+          const theta = Math.random() * TWO_PI;
+          const u = Math.random() * 2 - 1;
+          const phi = Math.acos(u);
+          const sinPhi = Math.sin(phi);
+          const x = Math.cos(theta) * sinPhi * radius;
+          const y = Math.sin(theta) * sinPhi * radius;
+          const z = Math.cos(phi) * radius;
+
+          p.positions[i3] = x;
+          p.positions[i3 + 1] = y;
+          p.positions[i3 + 2] = z;
+          p.radius[i] = radius;
+          p.targetRadius[i] = radius;
+          p.compactRadius[i] = radius;
+          p.collapseRadius[i] = radius;
+          p.theta[i] = theta;
+          p.phi[i] = phi;
+          p.drift[i] = 0.16 + Math.random() * 0.28;
+          p.phase[i] = Math.random() * TWO_PI;
+          p.brightness[i] = 0.42 + Math.random() * 0.16;
+          p.baseSize[i] = 0.56 + Math.random() * 0.52;
+          p.baseAlpha[i] = 0.14 + Math.random() * 0.16;
+          p.sizes[i] = p.baseSize[i];
+          p.alphas[i] = p.baseAlpha[i];
+          p.colors[i3] = 0.34 + Math.random() * 0.18;
+          p.colors[i3 + 1] = 0.74 + Math.random() * 0.12;
+          p.colors[i3 + 2] = 1.0;
+        }
+      }
+
+      initShellParticles() {
+        const p = this.shell;
+        for (let i = 0; i < SHELL_MAX; i++) {
+          const i3 = i * 3;
+          const radius = 2.0 + Math.pow(Math.random(), 0.72) * 5.0;
+          const theta = Math.random() * TWO_PI;
+          const u = Math.random() * 2 - 1;
+          const phi = Math.acos(u);
+          const sinPhi = Math.sin(phi);
+          const ellipsoidY = 0.86;
+          const ellipsoidZ = 0.72;
+          const x = Math.cos(theta) * sinPhi * radius;
+          const y = Math.sin(theta) * sinPhi * radius * ellipsoidY;
+          const z = Math.cos(phi) * radius * ellipsoidZ;
+
+          p.positions[i3] = x;
+          p.positions[i3 + 1] = y;
+          p.positions[i3 + 2] = z;
+          p.radius[i] = radius;
+          p.targetRadius[i] = radius;
+          p.compactRadius[i] = 2.58 + Math.random() * 0.34;
+          p.collapseRadius[i] = 1.12 + Math.pow(Math.random(), 0.45) * 0.46;
+          p.theta[i] = theta;
+          p.phi[i] = phi;
+          p.drift[i] = 0.08 + Math.random() * 0.18;
+          p.phase[i] = Math.random() * TWO_PI;
+          p.brightness[i] = 0.28 + Math.random() * 0.46;
+          p.baseSize[i] = 0.82 + Math.random() * 0.98;
+          p.baseAlpha[i] = 0.08 + Math.random() * 0.18;
+          p.sizes[i] = p.baseSize[i];
+          p.alphas[i] = p.baseAlpha[i];
+          p.band[i] = this.getGlobeBand(theta, phi);
+          p.colors[i3] = 0.0;
+          p.colors[i3 + 1] = 0.54 + Math.random() * 0.26;
+          p.colors[i3 + 2] = 0.9 + Math.random() * 0.1;
+        }
+      }
+
+      createParticleMaterial() {
+        return new THREE.ShaderMaterial({
+          uniforms: {
+            uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+            uSizeScale: { value: 37.5 },
+            uOpacity: { value: 0.56 }
+          },
+          vertexShader: `
+            uniform float uPixelRatio;
+            uniform float uSizeScale;
+            attribute float aSize;
+            attribute vec3 aColor;
+            attribute float aAlpha;
+            varying vec3 vColor;
+            varying float vAlpha;
+
+            void main() {
+              vColor = aColor;
+              vAlpha = aAlpha;
+              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+              float depth = max(1.0, -mvPosition.z);
+              gl_PointSize = aSize * uPixelRatio * (uSizeScale / depth);
+              gl_Position = projectionMatrix * mvPosition;
+            }
+          `,
+          fragmentShader: `
+            precision highp float;
+            uniform float uOpacity;
+            varying vec3 vColor;
+            varying float vAlpha;
+
+            void main() {
+              vec2 uv = gl_PointCoord - vec2(0.5);
+              float d = length(uv);
+              if (d > 0.5) discard;
+
+              float center = smoothstep(0.2, 0.03, d);
+              float edge = smoothstep(0.48, 0.36, d);
+              float alpha = edge * (0.58 + center * 0.42) * vAlpha * uOpacity;
+              vec3 color = vColor * (0.58 + center * 0.9);
+              gl_FragColor = vec4(color, alpha);
+            }
+          `,
+          blending: THREE.AdditiveBlending,
+          transparent: true,
+          depthWrite: false,
+          depthTest: true
+        });
+      }
+
+      initPostProcessing() {
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+        this.bloomPass = new UnrealBloomPass(
+          new THREE.Vector2(window.innerWidth, window.innerHeight),
+          0.5,
+          0.28,
+          0.18
+        );
+        this.composer.addPass(this.bloomPass);
+      }
+
+      async initStats() {
+        try {
+          const { default: Stats } = await import("https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js");
+          this.stats = new Stats();
+          this.stats.showPanel(0);
+          this.stats.dom.style.left = "auto";
+          this.stats.dom.style.right = "10px";
+          this.stats.dom.style.top = "58px";
+          this.stats.dom.style.opacity = "0.72";
+          document.body.appendChild(this.stats.dom);
+        } catch (error) {
+          console.info("Stats.js unavailable; continuing without FPS panel.", error);
+        }
+      }
+
+      async initHands() {
+        this.setStatus("Camera loading", "Idle", "#00eaff");
+
+        if (!window.Hands) {
+          this.setStatus("Camera permission denied", "MediaPipe failed", "#ff4fd8");
+          this.enablePointerFallback();
+          return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          this.setStatus("Camera permission denied", "Pointer fallback", "#ff4fd8");
+          this.enablePointerFallback();
+          return;
+        }
+
+        this.hands = new Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+        });
+        this.hands.setOptions({
+          selfieMode: true,
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.66
+        });
+        this.hands.onResults((results) => this.onResults(results));
+
+        try {
+          this.stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: "user",
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: false
+          });
+          this.video.srcObject = this.stream;
+          await this.video.play();
+          this.setStatus("Show your hand", "Idle", "#00eaff");
+          this.processVideoFrame();
+        } catch (error) {
+          this.setStatus("Camera permission denied", "Pointer fallback", "#ff4fd8");
+          this.enablePointerFallback();
+          console.warn("Camera permission denied or unavailable.", error);
+        }
+      }
+
+      async processVideoFrame() {
+        if (!this.hands || this.sendingFrame) {
+          requestAnimationFrame(() => this.processVideoFrame());
+          return;
+        }
+
+        if (this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          this.sendingFrame = true;
+          try {
+            await this.hands.send({ image: this.video });
+          } catch (error) {
+            console.warn("MediaPipe frame failed.", error);
+          }
+          this.sendingFrame = false;
+        }
+
+        requestAnimationFrame(() => this.processVideoFrame());
+      }
+
+      bindEvents() {
+        window.addEventListener("resize", () => this.onResize());
+        window.addEventListener("pointermove", (event) => this.onPointerMove(event));
+      }
+
+      enablePointerFallback() {
+        this.manualPointerFallback = true;
+        this.video.style.display = "none";
+      }
+
+      onPointerMove(event) {
+        if (!this.manualPointerFallback) return;
+        const nx = event.clientX / window.innerWidth;
+        const ny = event.clientY / window.innerHeight;
+        this.targetYaw = (nx - 0.5) * 1.15;
+        this.targetPitch = (0.5 - ny) * 0.65;
+      }
+
+      onResize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setPixelRatio(pixelRatio);
+        this.renderer.setSize(width, height);
+        this.composer.setSize(width, height);
+        this.particleMaterial.uniforms.uPixelRatio.value = pixelRatio;
+      }
+
+      onResults(results) {
+        const hands = results.multiHandLandmarks || [];
+        const now = performance.now();
+
+        if (!hands.length) {
+          if (now - this.lastHandTime > 300) {
+            this.handVisible = false;
+            this.gestureMode = "Idle";
+            this.fistLocked = false;
+            this.lastYawX = null;
+            this.lastPitchY = null;
+            this.setStatus("Show your hand", "Idle", "#00eaff");
+          }
+          return;
+        }
+
+        this.handVisible = true;
+        this.lastHandTime = now;
+        this.smoothLandmarks(hands[0]);
+
+        const palm = this.getPalmCenter();
+        const palmWidth = this.getPalmWidth();
+        const openness = this.getOpenness(palm, palmWidth);
+        const extended = this.getExtendedFingers(palmWidth);
+        const raisedCount = this.countExtendedFingers(extended);
+        const indexOnly = extended.index && !extended.middle && !extended.ring && !extended.pinky;
+        const twoFinger = extended.index && extended.middle && !extended.ring && !extended.pinky;
+        const fistCandidate = !extended.index && !extended.middle && !extended.ring && !extended.pinky && openness < FIST_OPENNESS;
+        const releaseFist = openness > 0.38 || raisedCount >= 2;
+        const closedFist = fistCandidate || (this.fistLocked && !releaseFist);
+        this.fistLocked = closedFist;
+        const palmOpenAmount = closedFist ? 0 : THREE.MathUtils.clamp(openness, PALM_MIN_OPEN, 1);
+
+        if (closedFist) {
+          this.targetOpen = 0;
+          this.targetCollapse = 1;
+          this.targetGiant = 0;
+          this.lastScaleGestureTime = now;
+          this.lastYawX = null;
+          this.lastPitchY = null;
+          this.gestureMode = "Fist";
+          this.setStatus("Tracking active", "Fist", "#ffffff");
+        } else if (twoFinger) {
+          if (this.targetCollapse > 0 || this.targetOpen < PALM_MIN_OPEN) {
+            this.targetOpen = PALM_MIN_OPEN;
+            this.targetGiant = 1;
+          }
+          this.targetCollapse = 0;
+          const indexY = this.landmarks[8 * 3 + 1];
+          const middleY = this.landmarks[12 * 3 + 1];
+          const avgY = (indexY + middleY) * 0.5;
+          if (this.lastPitchY !== null) {
+            const dy = avgY - this.lastPitchY;
+            this.targetPitch = THREE.MathUtils.clamp(this.targetPitch - dy * 6.2, -1.25, 1.25);
+          }
+          this.lastPitchY = avgY;
+          this.lastYawX = null;
+          this.gestureMode = "Pitch";
+          this.setStatus("Tracking active", "Two fingers", "#66ffff");
+        } else if (indexOnly) {
+          if (this.targetCollapse > 0 || this.targetOpen < PALM_MIN_OPEN) {
+            this.targetOpen = PALM_MIN_OPEN;
+            this.targetGiant = 1;
+          }
+          this.targetCollapse = 0;
+          const indexX = this.landmarks[8 * 3];
+          if (this.lastYawX !== null) {
+            const dx = indexX - this.lastYawX;
+            this.targetYaw = THREE.MathUtils.clamp(this.targetYaw - dx * 7.2, -Math.PI * 2, Math.PI * 2);
+          }
+          this.lastYawX = indexX;
+          this.lastPitchY = null;
+          this.gestureMode = "Yaw";
+          this.setStatus("Tracking active", "Index", "#00eaff");
+        } else {
+          const giantIntent = 1 - THREE.MathUtils.smoothstep(palmOpenAmount, GIANT_FADE_START, GIANT_FADE_END);
+          this.targetOpen = palmOpenAmount;
+          this.targetCollapse = 0;
+          this.targetGiant = giantIntent;
+          this.lastScaleGestureTime = now;
+          this.lastYawX = null;
+          this.lastPitchY = null;
+
+          if (palmOpenAmount > 0.86) {
+            this.gestureMode = "Max";
+            this.setStatus("Tracking active", "Open palm", "#66ffff");
+          } else if (giantIntent > 0.55) {
+            this.gestureMode = "Giant";
+            this.setStatus("Tracking active", "Giant", "#9ff7ff");
+          } else if (Math.abs(palmOpenAmount - MIDDLE_OPEN) <= 0.16) {
+            this.gestureMode = "Middle";
+            this.setStatus("Tracking active", "Middle", "#9ff7ff");
+          } else {
+            this.gestureMode = "Scale";
+            this.setStatus("Tracking active", "Palm scale", "#9ff7ff");
+          }
+        }
+      }
+
+      smoothLandmarks(source) {
+        for (let i = 0; i < LANDMARK_COUNT; i++) {
+          const i3 = i * 3;
+          const x = source[i].x;
+          const y = source[i].y;
+          const z = source[i].z || 0;
+          if (!this.landmarksReady) {
+            this.landmarks[i3] = x;
+            this.landmarks[i3 + 1] = y;
+            this.landmarks[i3 + 2] = z;
+          } else {
+            this.landmarks[i3] += (x - this.landmarks[i3]) * LANDMARK_ALPHA;
+            this.landmarks[i3 + 1] += (y - this.landmarks[i3 + 1]) * LANDMARK_ALPHA;
+            this.landmarks[i3 + 2] += (z - this.landmarks[i3 + 2]) * LANDMARK_ALPHA;
+          }
+        }
+        this.landmarksReady = true;
+      }
+
+      getPalmCenter() {
+        const p = this.landmarks;
+        const i0 = 0;
+        const i5 = 5 * 3;
+        const i9 = 9 * 3;
+        const i13 = 13 * 3;
+        const i17 = 17 * 3;
+        return {
+          x: (p[i0] + p[i5] + p[i9] + p[i13] + p[i17]) * 0.2,
+          y: (p[i0 + 1] + p[i5 + 1] + p[i9 + 1] + p[i13 + 1] + p[i17 + 1]) * 0.2,
+          z: (p[i0 + 2] + p[i5 + 2] + p[i9 + 2] + p[i13 + 2] + p[i17 + 2]) * 0.2
+        };
+      }
+
+      getPalmWidth() {
+        return Math.max(0.045, this.landmarkDistance(5, 17));
+      }
+
+      getOpenness(palm, palmWidth) {
+        let total = 0;
+        for (let i = 0; i < TIP_INDICES.length; i++) {
+          total += this.landmarkDistanceToPoint(TIP_INDICES[i], palm);
+        }
+        const normalized = total / TIP_INDICES.length / palmWidth;
+        return THREE.MathUtils.clamp((normalized - 1.02) / 1.0, 0, 1);
+      }
+
+      getExtendedFingers(palmWidth) {
+        return {
+          thumb: this.landmarkDistance(4, 0) > this.landmarkDistance(3, 0) + palmWidth * 0.25,
+          index: this.landmarkDistance(8, 0) > this.landmarkDistance(6, 0) + palmWidth * 0.42,
+          middle: this.landmarkDistance(12, 0) > this.landmarkDistance(10, 0) + palmWidth * 0.42,
+          ring: this.landmarkDistance(16, 0) > this.landmarkDistance(14, 0) + palmWidth * 0.36,
+          pinky: this.landmarkDistance(20, 0) > this.landmarkDistance(18, 0) + palmWidth * 0.32
+        };
+      }
+
+      countExtendedFingers(extended) {
+        return Number(extended.thumb) + Number(extended.index) + Number(extended.middle) + Number(extended.ring) + Number(extended.pinky);
+      }
+
+      getGlobeBand(theta, phi) {
+        const latitudeLine = Math.max(0, 1 - Math.abs(Math.sin(phi * 9)) / 0.18);
+        const longitudeLine = Math.max(0, 1 - Math.abs(Math.sin(theta * 12)) / 0.16);
+        const equator = Math.max(0, 1 - Math.abs(phi - Math.PI * 0.5) / 0.12);
+        const diagonalLine = Math.max(0, 1 - Math.abs(Math.sin(theta * 2.1 + phi * 3.2)) / 0.13);
+        return THREE.MathUtils.clamp(
+          Math.max(latitudeLine * 0.82, longitudeLine * 0.74, equator * 0.62, diagonalLine * 0.48),
+          0,
+          1
+        );
+      }
+
+      landmarkDistance(a, b) {
+        const p = this.landmarks;
+        const ai = a * 3;
+        const bi = b * 3;
+        const dx = p[ai] - p[bi];
+        const dy = p[ai + 1] - p[bi + 1];
+        const dz = p[ai + 2] - p[bi + 2];
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+
+      landmarkDistanceToPoint(index, point) {
+        const p = this.landmarks;
+        const i3 = index * 3;
+        const dx = p[i3] - point.x;
+        const dy = p[i3 + 1] - point.y;
+        const dz = p[i3 + 2] - point.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+        this.stats?.begin();
+
+        const dt = Math.min(this.clock.getDelta(), 0.033);
+        const time = this.clock.elapsedTime;
+
+        this.updateControls(dt, time);
+        this.updateCore(time);
+        this.updatePerformance(dt);
+        this.updateShell(time);
+
+        this.coreGeometry.attributes.position.needsUpdate = true;
+        this.coreGeometry.attributes.aColor.needsUpdate = true;
+        this.coreGeometry.attributes.aSize.needsUpdate = true;
+        this.coreGeometry.attributes.aAlpha.needsUpdate = true;
+        this.shellGeometry.attributes.position.needsUpdate = true;
+        this.shellGeometry.attributes.aColor.needsUpdate = true;
+        this.shellGeometry.attributes.aSize.needsUpdate = true;
+        this.shellGeometry.attributes.aAlpha.needsUpdate = true;
+
+        this.composer.render();
+        this.stats?.end();
+      }
+
+      updateControls(dt, time) {
+        const openRate = this.targetOpen < this.smoothedOpen ? (this.targetCollapse > 0 ? 0.14 : 0.095) : OPEN_ALPHA;
+        this.smoothedOpen += (this.targetOpen - this.smoothedOpen) * openRate;
+        const collapseRate = this.targetCollapse > this.collapse ? 0.12 : 0.08;
+        this.collapse += (this.targetCollapse - this.collapse) * collapseRate;
+        this.giant += (this.targetGiant - this.giant) * 0.18;
+        this.yaw += (this.targetYaw - this.yaw) * ROTATION_ALPHA;
+        this.pitch += (this.targetPitch - this.pitch) * ROTATION_ALPHA;
+        this.baseRotation += dt * (0.16 + this.smoothedOpen * 0.08);
+
+        const giantView = this.giant * (1 - this.collapse);
+        const middleView = 1 - Math.min(1, Math.abs(this.smoothedOpen - MIDDLE_OPEN) / MIDDLE_RANGE);
+        const zoomIntent = Math.pow(this.smoothedOpen, 1.35) * (1 - this.collapse * 0.45) * (1 - giantView * 0.62) * (1 - middleView * 0.42);
+        const cameraTargetZ = THREE.MathUtils.lerp(CAMERA_Z, CAMERA_EXPANDED_Z, zoomIntent);
+        this.camera.position.z += (cameraTargetZ - this.camera.position.z) * (1 - Math.exp(-dt * 2.6));
+        const lifeScale = 1 + Math.sin(time * 1.18) * 0.006 + Math.sin(time * 0.41) * 0.004;
+        this.root.scale.setScalar(lifeScale);
+        this.root.rotation.y = this.baseRotation + this.yaw;
+        this.root.rotation.x = this.pitch;
+        this.root.position.set(0, 0, 0);
+        this.corePoints.position.set(0, 0, 0);
+        this.shellPoints.position.set(0, 0, 0);
+
+        const compact = 1 - this.smoothedOpen;
+        const bloomTarget = 0.25 + this.smoothedOpen * 0.34 + this.collapse * 0.07 + giantView * 0.04;
+        this.bloomPass.strength += (bloomTarget - this.bloomPass.strength) * (1 - Math.exp(-dt * 4));
+        this.bloomPass.radius = 0.16 + this.smoothedOpen * 0.18 + this.collapse * 0.03;
+        this.bloomPass.threshold = 0.22 + compact * 0.18 - this.collapse * 0.015;
+        this.particleMaterial.uniforms.uOpacity.value = 0.45 + this.smoothedOpen * 0.16 + this.collapse * 0.025 + giantView * 0.025;
+        this.updateSpaceState();
+      }
+
+      updateCore(time) {
+        const p = this.core;
+        const coreScale = 0.82 + this.smoothedOpen * 0.2;
+        const compact = 1 - this.smoothedOpen;
+        const middle = 1 - Math.min(1, Math.abs(this.smoothedOpen - MIDDLE_OPEN) / MIDDLE_RANGE);
+        const giantView = this.giant * (1 - this.collapse);
+        const giantCore = giantView * 0.16;
+        for (let i = 0; i < CORE_COUNT; i++) {
+          const i3 = i * 3;
+          const radius = p.radius[i] * coreScale * (1 + Math.sin(time * 0.8 + p.phase[i]) * 0.018);
+          p.theta[i] += p.drift[i] * 0.45 * 0.016;
+          const theta = p.theta[i] + Math.sin(time * 0.25 + p.phase[i]) * 0.035;
+          const phi = p.phi[i] + Math.cos(time * 0.22 + p.phase[i]) * 0.025;
+          const sinPhi = Math.sin(phi);
+          const x = Math.cos(theta) * sinPhi * radius;
+          const y = Math.sin(theta) * sinPhi * radius;
+          const z = Math.cos(phi) * radius;
+
+          const vx = x - p.positions[i3];
+          const vy = y - p.positions[i3 + 1];
+          const vz = z - p.positions[i3 + 2];
+          p.velocities[i3] = vx;
+          p.velocities[i3 + 1] = vy;
+          p.velocities[i3 + 2] = vz;
+          p.positions[i3] = x;
+          p.positions[i3 + 1] = y;
+          p.positions[i3 + 2] = z;
+
+          const glow = p.brightness[i] * (0.82 + this.smoothedOpen * 0.36 + middle * 0.28 + giantCore);
+          p.sizes[i] = p.baseSize[i] * (0.78 + this.smoothedOpen * 0.26 + middle * 0.12);
+          p.alphas[i] = p.baseAlpha[i] * (0.94 + this.smoothedOpen * 0.58 + middle * 0.42 + giantView * 0.22);
+          p.colors[i3] = Math.min(0.9, 0.2 + glow * 0.26 + compact * 0.04 + middle * 0.06 + giantView * 0.04);
+          p.colors[i3 + 1] = Math.min(1.24, 0.78 + glow * 0.34 + middle * 0.12 + giantView * 0.08);
+          p.colors[i3 + 2] = Math.min(1.2, 0.98 + this.smoothedOpen * 0.14 + middle * 0.12 + giantView * 0.06);
+        }
+      }
+
+      updateShell(time) {
+        const p = this.shell;
+        const compact = 1 - this.smoothedOpen;
+        const middle = 1 - Math.min(1, Math.abs(this.smoothedOpen - MIDDLE_OPEN) / MIDDLE_RANGE);
+        const giantView = this.giant * (1 - this.collapse);
+        const collapseStillness = THREE.MathUtils.smoothstep(this.collapse, 0.35, 0.95);
+        const motionScale = 1 - collapseStillness * 0.88;
+        const breath = 1 + (Math.sin(time * 1.45) * 0.012 + Math.sin(time * 0.53) * 0.008) * motionScale;
+        const shellScale = (0.96 + this.smoothedOpen * 1.42 - middle * 0.42 + giantView * 0.24) * breath;
+        const ellipsoidY = THREE.MathUtils.lerp((1 - this.smoothedOpen * 0.14) * (1 + middle * 0.08), 0.92, this.collapse);
+        const ellipsoidZ = THREE.MathUtils.lerp((1 - this.smoothedOpen * 0.26) * (1 + middle * 0.18), 0.9, this.collapse);
+        const openDensity = COMPACT_SHELL + Math.round((this.activeShell - COMPACT_SHELL) * this.smoothedOpen);
+        const giantDensity = THREE.MathUtils.lerp(openDensity, Math.min(this.activeShell, GIANT_SHELL), giantView);
+        const densityTarget = Math.round(THREE.MathUtils.lerp(giantDensity, COLLAPSE_SHELL, this.collapse));
+        this.visibleShell += (densityTarget - this.visibleShell) * 0.08;
+        const drawCount = THREE.MathUtils.clamp(Math.round(this.visibleShell), COMPACT_SHELL, this.activeShell);
+        this.shellGeometry.setDrawRange(0, drawCount);
+
+        for (let i = 0; i < drawCount; i++) {
+          const i3 = i * 3;
+          const life = Math.sin(time * (0.85 + p.drift[i] * 1.7) + p.phase[i]);
+          const softLife = life * motionScale;
+          const tremor = Math.sin(time * 2.25 + p.phase[i] * 1.7) * 0.006 * (0.35 + compact) * motionScale;
+          p.theta[i] += ((p.drift[i] * 0.016) + compact * 0.0022) * motionScale + this.collapse * 0.00018;
+          p.phi[i] += (Math.sin(time * 0.28 + p.phase[i]) * (0.00055 + this.smoothedOpen * 0.00035) + tremor * 0.08) * motionScale;
+          const expandedRadius = p.targetRadius[i] * shellScale;
+          const compactRadius = p.compactRadius[i] * (1 + Math.sin(time * 0.72 + p.phase[i]) * 0.01);
+          const middleRadius = (2.55 + Math.pow(p.targetRadius[i] / 7.0, 0.68) * 2.25) * (1 + softLife * 0.05);
+          const giantRadius = (p.compactRadius[i] + 1.28 + Math.pow(p.targetRadius[i] / 7.0, 0.72) * 2.05) * (1 + softLife * 0.035);
+          const openRadius = THREE.MathUtils.lerp(
+            THREE.MathUtils.lerp(
+              THREE.MathUtils.lerp(compactRadius, expandedRadius, this.smoothedOpen),
+              giantRadius,
+              giantView * 0.92
+            ),
+            middleRadius,
+            middle * (1 - giantView) * 0.72
+          );
+          const collapsedRadius = p.collapseRadius[i] * (1 + softLife * 0.018 + Math.sin(time * 1.15 + p.phase[i]) * 0.004 * motionScale);
+          const radius = THREE.MathUtils.lerp(openRadius, collapsedRadius, this.collapse) * (1 + Math.sin(time * 0.72 + p.phase[i]) * 0.018 * motionScale);
+          p.radius[i] = radius;
+
+          const theta = p.theta[i] + Math.sin(time * 0.32 + p.phase[i]) * (0.012 + this.smoothedOpen * 0.03) * motionScale + tremor;
+          const phi = p.phi[i] + tremor * 0.7;
+          const sinPhi = Math.sin(phi);
+          const x = Math.cos(theta) * sinPhi * radius;
+          const y = Math.sin(theta) * sinPhi * radius * ellipsoidY;
+          const z = Math.cos(phi) * radius * ellipsoidZ;
+
+          const vx = x - p.positions[i3];
+          const vy = y - p.positions[i3 + 1];
+          const vz = z - p.positions[i3 + 2];
+          p.velocities[i3] = vx;
+          p.velocities[i3 + 1] = vy;
+          p.velocities[i3 + 2] = vz;
+          p.positions[i3] = x;
+          p.positions[i3 + 1] = y;
+          p.positions[i3 + 2] = z;
+
+          const speed = Math.min(1, Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.8);
+          const band = p.band[i] * compact;
+          const pulse = 1 + softLife * 0.055;
+          const brightness = p.brightness[i] * (0.46 + this.smoothedOpen * 0.4 + middle * 0.18 + giantView * 0.12) + speed * 0.1 + band * 0.3 + this.collapse * 0.1;
+          p.sizes[i] = p.baseSize[i] * (0.72 + this.smoothedOpen * 0.32 + middle * 0.1 + giantView * 0.05 + band * 0.46 + this.collapse * 0.08) * pulse;
+          p.alphas[i] = p.baseAlpha[i] * (0.46 + this.smoothedOpen * 0.4 + middle * 0.14 + giantView * 0.08 + band * 0.62 + this.collapse * 0.14);
+          p.colors[i3] = Math.min(0.54, speed * 0.05 + band * 0.18 + middle * 0.04 + giantView * 0.03 + this.collapse * 0.05);
+          p.colors[i3 + 1] = Math.min(0.9, 0.34 + brightness * 0.36 + middle * 0.06 + giantView * 0.04 + band * 0.07 + this.collapse * 0.05);
+          p.colors[i3 + 2] = Math.min(0.96, 0.58 + brightness * 0.34 + middle * 0.06 + giantView * 0.04 + band * 0.14 + this.collapse * 0.04);
+        }
+      }
+
+      updatePerformance(dt) {
+        this.fpsTimer += dt;
+        this.frameCounter++;
+        this.qualityCooldown = Math.max(0, this.qualityCooldown - dt);
+        if (this.fpsTimer < 1.2) return;
+
+        const fps = this.frameCounter / this.fpsTimer;
+        this.smoothedFps = this.smoothedFps * 0.72 + fps * 0.28;
+        this.frameCounter = 0;
+        this.fpsTimer = 0;
+
+        if (this.smoothedFps < 43 && this.qualityCooldown === 0) {
+          this.activeShell = Math.max(SHELL_MIN, this.activeShell - 4000);
+          this.visibleShell = Math.min(this.visibleShell, this.activeShell);
+          this.bloomPass.strength = Math.max(0.18, this.bloomPass.strength * 0.9);
+          this.qualityCooldown = 3;
+        } else if (this.smoothedFps > 57 && this.activeShell < SHELL_MAX) {
+          this.activeShell = Math.min(SHELL_MAX, this.activeShell + 2000);
+        }
+      }
+
+      setStatus(status, gesture, color) {
+        this.statusText.textContent = status;
+        this.gestureText.textContent = gesture;
+        this.statusDot.style.background = color;
+        this.statusDot.style.boxShadow = `0 0 12px ${color}, 0 0 26px ${color}`;
+      }
+
+      updateSpaceState() {
+        let state = "待机";
+        const openDelta = this.targetOpen - this.smoothedOpen;
+        const rotationActive = Math.abs(this.yaw) > 0.06 || Math.abs(this.pitch) > 0.06;
+
+        if (this.gestureMode === "Yaw" || this.gestureMode === "Pitch") {
+          state = "旋转";
+        } else if (this.gestureMode === "Fist" || this.targetCollapse > 0 || this.collapse > 0.18) {
+          state = "坍缩";
+        } else if (this.gestureMode === "Giant") {
+          state = "巨圆";
+        } else if (this.gestureMode === "Middle") {
+          state = "中间";
+        } else if (this.gestureMode === "Max") {
+          state = "扩张";
+        } else if (openDelta > 0.025 || this.smoothedOpen > 0.76) {
+          state = "扩张";
+        } else if (openDelta < -0.025 || this.smoothedOpen < 0.24) {
+          state = "收缩";
+        } else if (rotationActive) {
+          state = "旋转";
+        }
+
+        this.spaceState.textContent = `空间状态 ${state}`;
+      }
+
+      debugState() {
+        return {
+          coreCount: CORE_COUNT,
+          shellCount: this.activeShell,
+          visibleShell: Math.round(this.visibleShell),
+          shellMax: SHELL_MAX,
+          shellMin: SHELL_MIN,
+          totalParticles: CORE_COUNT + this.activeShell,
+          status: this.statusText.textContent,
+          gesture: this.gestureText.textContent,
+          gestureMode: this.gestureMode,
+          smoothedOpen: this.smoothedOpen,
+          targetOpen: this.targetOpen,
+          collapse: this.collapse,
+          giant: this.giant,
+          yaw: this.yaw,
+          pitch: this.pitch,
+          rootX: this.root.position.x,
+          rootY: this.root.position.y,
+          coreX: this.corePoints.position.x,
+          coreY: this.corePoints.position.y,
+          materialType: this.particleMaterial.type,
+          hasCircularShader: this.particleMaterial.fragmentShader.includes("gl_PointCoord") && this.particleMaterial.fragmentShader.includes("discard"),
+          bloomStrength: this.bloomPass.strength,
+          bloomRadius: this.bloomPass.radius,
+          bloomThreshold: this.bloomPass.threshold,
+          canvasWidth: this.renderer.domElement.width,
+          canvasHeight: this.renderer.domElement.height
+        };
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      new CellularCoreParticles();
+    });
+  </script>
+</body>
+</html>
