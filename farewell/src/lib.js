@@ -451,6 +451,10 @@ function getLayer(d) {
 }
 
 // Draw fn(lctx) into a fresh transparent layer, then composite it onto ctx.
+// The layer starts with an identity transform: inside camera(), copy the
+// camera with l.setTransform(ctx.getTransform()) first if you need it.
+// A full-screen layer costs a composite (and a blur filter is expensive), so
+// prefer a small private canvas for small effects.
 // o: {alpha, filter ('blur(4px) sepia(0.6)'), composite, mask(lctx)}
 //   mask: optional function drawing into the layer with 'destination-in'
 export function withLayer(ctx, fn, o = {}) {
@@ -462,6 +466,7 @@ export function withLayer(ctx, fn, o = {}) {
   l.filter = 'none';
   l.clearRect(0, 0, W, H);
   depth++;
+  l.save(); // so a clip() inside fn can't leak into later uses of this pooled layer
   try {
     fn(l);
     if (o.mask) {
@@ -472,6 +477,7 @@ export function withLayer(ctx, fn, o = {}) {
       l.restore();
     }
   } finally {
+    l.restore();
     depth--;
   }
   ctx.save();

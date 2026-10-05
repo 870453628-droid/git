@@ -32,6 +32,8 @@
 //               2 for her, others 3+)
 //   o.w, o.color, o.alpha, o.dash, o.eye ('dot'|'closed'|'none'), o.legs
 //   o.headFill  paper colour fill so the head hides lines behind it
+//   o.tieR      radius of her gold tie (default max(3.6, 6.2*s)); o.noTie
+//               skips it. The returned joints include .tie ([x, y] or null).
 
 import { COL, TAU, lerp, path, ellipse, dot, F } from './lib.js';
 
@@ -179,8 +181,9 @@ export function figure(ctx, p0, o = {}) {
 
   if (o.ponytail && p.view === 'back') tie = drawTail(ctx, p, j, st, sd, o, true);
   if (tie && !o.noTie) {
-    dot(ctx, tie[0], tie[1], Math.max(3, 5.4 * s), o.tieColor ?? COL.gold);
+    dot(ctx, tie[0], tie[1], o.tieR ?? Math.max(3.6, 6.2 * s), o.tieColor ?? COL.gold);
   }
+  j.tie = tie;
 
   // eyes
   const eye = o.eye ?? 'dot';
