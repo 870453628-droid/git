@@ -134,7 +134,7 @@ async function main() {
       const audio = path.join(ROOT, 'assets', 'audio.m4a');
       const withAudio = mode === 'video' && arg('audio', '1') !== '0';
       await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list,
-        ...(withAudio ? ['-ss', String(from), '-i', audio, '-map', '0:v', '-map', '1:a', '-c:a', 'copy'] : []),
+        ...(withAudio ? ['-ss', String(from), '-t', String(to - from), '-i', audio, '-map', '0:v', '-map', '1:a', '-c:a', 'copy'] : []),
         '-c:v', 'copy', '-movflags', '+faststart', out]);
       fs.rmSync(tmp, { recursive: true, force: true });
       console.log(`wrote ${out} in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
