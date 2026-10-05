@@ -34,6 +34,7 @@
 //   o.headFill  paper colour fill so the head hides lines behind it
 //   o.mustache  true | 'droop' — his turned-up moustache (droops when old)
 //   o.bow, o.skirt, o.boots — the girl: a hair bow, a small skirt, white boots
+//   o.boots: 'black' — his patent-leather boots (with a little shine)
 //   o.tieR      radius of her gold tie (default max(3.6, 6.2*s)); o.noTie
 //               skips it. The returned joints include .tie ([x, y] or null).
 
@@ -140,7 +141,7 @@ export function figure(ctx, p0, o = {}) {
   const w = o.w ?? Math.max(2, 4.6 * Math.pow(s, 0.85));
   const id = o.id ?? 3;
   const sd = (k) => id * 41 + k;
-  const st = { w, color: o.color ?? COL.ink, dash: o.dash, still: o.still, wobble: o.wobble ?? 1.1 };
+  const st = { w, color: o.color ?? COL.ink, dash: o.dash, still: o.still, wobble: o.wobble ?? 1.1, boots: o.boots };
   ctx.save();
   if (o.alpha !== undefined) ctx.globalAlpha *= o.alpha;
 
@@ -412,7 +413,10 @@ function boots(ctx, p, j, st, sd) {
   for (const [k, ft] of [[0, j.footA], [1, j.footB]]) {
     const cx = ft[0] + f * 4 * s;
     const cy = ft[1] - 3 * s;
-    ellipse(ctx, cx, cy, 8.5 * s, 5.5 * s, { ...st, w: Math.max(1.4, st.w * 0.6), fill: COL.paper, seed: sd(27 + k), wobble: 0.2 });
+    // 'black' = his patent-leather boots (wedding day, and later the wall)
+    const black = p.boots === 'black' || st.boots === 'black';
+    ellipse(ctx, cx, cy, 8.5 * s, 5.5 * s, { ...st, w: Math.max(1.4, st.w * 0.6), fill: black ? COL.ink : COL.paper, seed: sd(27 + k), wobble: 0.2 });
+    if (black) dot(ctx, cx + f * 3 * s, cy - 2 * s, Math.max(1, 1.3 * s), '#f4ecd8', 0.9);
   }
 }
 
