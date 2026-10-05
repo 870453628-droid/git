@@ -48,3 +48,6 @@ venv/
 # Other language / tool outputs
 target/
 .gradle/
+
+# Rendered video output
+farewell/out/
