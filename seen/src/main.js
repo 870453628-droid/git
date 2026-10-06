@@ -6,16 +6,25 @@ const FADE = 0.6;
 export const STRICT = { on: false };
 const EN_FONT = 'Georgia, serif';
 
+// Transition lengths between scene i-1 and i (fi) and between i and i+1 (fo).
+function fades(i) {
+  const s = SCENES[i];
+  const prev = SCENES[i - 1];
+  const next = SCENES[i + 1];
+  const fi = prev ? s.mod.fadeIn ?? prev.mod.fadeOut ?? FADE : 0;
+  const fo = next ? next.mod.fadeIn ?? s.mod.fadeOut ?? FADE : 0;
+  return { fi, fo };
+}
+
+// Each scene is drawn opaque (paper + scene) into its own layer. A dissolve
+// draws the outgoing scene at full strength and fades the incoming one in
+// over it, so dark-to-dark dissolves don't flash the paper through.
+// Returns the incoming alpha, or -1 when the scene is not on screen.
 function sceneAlpha(i, t) {
   const s = SCENES[i];
-  const fi = i === 0 ? 0 : s.mod.fadeIn ?? SCENES[i - 1].mod.fadeOut ?? FADE;
-  const fo = i === SCENES.length - 1 ? 0 : s.mod.fadeOut ?? SCENES[i + 1].mod.fadeIn ?? FADE;
-  let a = 1;
-  if (fi > 0) a = Math.min(a, smooth(t, s.start - fi / 2, s.start + fi / 2, ease.sine));
-  else if (t < s.start) a = 0;
-  if (fo > 0) a = Math.min(a, 1 - smooth(t, s.end - fo / 2, s.end + fo / 2, ease.sine));
-  else if (t >= s.end) a = 0;
-  return a;
+  const { fi, fo } = fades(i);
+  if (t < s.start - fi / 2 || t >= s.end + fo / 2) return -1;
+  return fi > 0 ? smooth(t, s.start - fi / 2, s.start + fi / 2, ease.sine) : 1;
 }
 
 // Subtitles: light text with a dark outline and a soft shadow, so they read
@@ -78,6 +87,7 @@ export function renderAt(ctx, t) {
     F.stroke = 0;
     F.still = false;
     withLayer(ctx, (l) => {
+      paper(l);
       try {
         s.mod.draw(l, t - s.start, info);
       } catch (e) {
