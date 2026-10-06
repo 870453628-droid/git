@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>我还是想被看见 · 火柴人</title>
+  <style>
+    @font-face {
+      font-family: 'WenKai';
+      src: url('assets/wenkai.woff2') format('woff2');
+    }
+    :root { --paper: #e8e2d6; --ink: #1f1c19; }
+    html, body { margin: 0; height: 100%; background: #2a2724; color: var(--paper); font: 14px/1.4 system-ui, sans-serif; }
+    #stage { position: fixed; inset: 0 0 56px 0; display: flex; align-items: center; justify-content: center; }
+    canvas { max-width: 100%; max-height: 100%; aspect-ratio: 16 / 9; background: var(--paper); box-shadow: 0 10px 40px rgba(0,0,0,.45); }
+    #bar { position: fixed; left: 0; right: 0; bottom: 0; height: 56px; display: flex; gap: 12px; align-items: center; padding: 0 16px; background: #1b1917; }
+    #bar button { background: var(--paper); color: var(--ink); border: 0; border-radius: 4px; padding: 6px 14px; font: inherit; cursor: pointer; }
+    #scrub { flex: 1; }
+    #time { font-variant-numeric: tabular-nums; min-width: 120px; text-align: right; }
+    body.render #bar { display: none; }
+    body.render #stage { inset: 0; }
+    body.render canvas { box-shadow: none; }
+  </style>
+</head>
+<body>
+  <div id="stage"><canvas id="c" width="1920" height="1080"></canvas></div>
+  <div id="bar">
+    <button id="play">播放</button>
+    <input id="scrub" type="range" min="0" max="88" step="0.01" value="0" />
+    <span id="time">0.00</span>
+  </div>
+  <audio id="audio" preload="none"></audio>
+  <script type="module">
+    import { renderAt, DURATION, SCENES, STRICT, loadScenes } from './src/main.js';
+    import { W, H } from './src/lib.js';
+
+    const params = new URLSearchParams(location.search);
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    if (params.has('render')) document.body.classList.add('render');
+
+    window.DURATION = DURATION;
+    window.SCENES = SCENES.map((s) => ({ id: s.id, start: s.start, end: s.end }));
+    STRICT.on = params.has('strict');
+    window.renderAt = (t) => renderAt(ctx, t);
+    window.frameJPEG = (t, q = 0.94) => {
+      renderAt(ctx, t);
+      return canvas.toDataURL('image/jpeg', q);
+    };
+    // Contact sheet of frames at the given times, labelled with timestamps.
+    window.sheet = (times, cols = 4, scale = 0.25) => {
+      const tw = Math.round(W * scale);
+      const th = Math.round(H * scale);
+      const rows = Math.ceil(times.length / cols);
+      const out = document.createElement('canvas');
+      out.width = cols * tw + (cols + 1) * 6;
+      out.height = rows * (th + 22) + 6;
+      const o = out.getContext('2d');
+      o.fillStyle = '#2a2724';
+      o.fillRect(0, 0, out.width, out.height);
+      times.forEach((t, i) => {
+        renderAt(ctx, t);
+        const x = 6 + (i % cols) * (tw + 6);
+        const y = 6 + Math.floor(i / cols) * (th + 22);
+        o.drawImage(canvas, x, y + 18, tw, th);
+        o.fillStyle = '#f2d48a';
+        o.font = '14px monospace';
+        o.fillText(`t=${t.toFixed(2)}`, x + 2, y + 13);
+      });
+      return out.toDataURL('image/png');
+    };
+
+    window.ready = (async () => {
+      const failed = await loadScenes();
+      failed.forEach((f) => console.warn('scene failed to load:', f));
+      if (STRICT.on && failed.length) throw new Error(failed.join('\n'));
+      await document.fonts.load('56px WenKai', '我还是想被看见');
+      await document.fonts.ready;
+      renderAt(ctx, Number(params.get('t') ?? 0));
+      return true;
+    })();
+
+    // ---- preview player
+    const audio = document.getElementById('audio');
+    const scrub = document.getElementById('scrub');
+    const time = document.getElementById('time');
+    const play = document.getElementById('play');
+    scrub.max = DURATION;
+    let playing = false;
+    let t0 = 0;
+    let wall = 0;
+    const now = () => (audio.duration && !audio.paused ? audio.currentTime : t0 + (performance.now() - wall) / 1000);
+    function frame() {
+      if (!playing) return;
+      let t = now();
+      if (t >= DURATION) { t = DURATION; toggle(); }
+      renderAt(ctx, t);
+      scrub.value = t;
+      time.textContent = t.toFixed(2);
+      requestAnimationFrame(frame);
+    }
+    function toggle() {
+      playing = !playing;
+      play.textContent = playing ? '暂停' : '播放';
+      if (playing) {
+        t0 = Number(scrub.value);
+        if (t0 >= DURATION - 0.05) t0 = 0;
+        wall = performance.now();
+        audio.currentTime = t0;
+        audio.play().catch(() => {});
+        requestAnimationFrame(frame);
+      } else audio.pause();
+    }
+    play.onclick = toggle;
+    scrub.oninput = () => {
+      const t = Number(scrub.value);
+      renderAt(ctx, t);
+      time.textContent = t.toFixed(2);
+      if (playing) { t0 = t; wall = performance.now(); audio.currentTime = t; }
+    };
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Space') { e.preventDefault(); toggle(); }
+      if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') {
+        scrub.value = Number(scrub.value) + (e.code === 'ArrowRight' ? 1 : -1);
+        scrub.oninput();
+      }
+    });
+  </script>
+</body>
+</html>
