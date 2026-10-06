@@ -43,9 +43,9 @@ export function workshop(ctx, t, o = {}) {
   path(ctx, [[R.x1, R.doorTop], [R.x1, R.top], [R.x0, R.top], [R.x0, R.floor], [R.x1 + 260, R.floor]], { w: 5.5, seed: 4000, alpha: a, sketch: true });
   line(ctx, R.x1 - 8, R.doorTop, R.x1 + 26, R.doorTop, { w: 5, seed: 4001, alpha: a });
   line(ctx, R.x1 + 22, R.doorTop - 4, R.x1 + 22, R.floor, { w: 3, seed: 4002, alpha: a * 0.55 });
-  // a shelf with a few finished fish
+  // a shelf with a few finished fish (empty in old age: only THE fish is left)
   line(ctx, 900, 360, 1160, 360, { w: 3.5, seed: 4003, alpha: a });
-  for (let i = 0; i < 4; i++) goldFish(ctx, 940 + i * 60, 344, 0.42, 0, { alpha: a * 0.85, seed: 4010 + i * 7, still: true });
+  if (o.shelfFish !== false) for (let i = 0; i < 4; i++) goldFish(ctx, 940 + i * 60, 344, 0.42, 0, { alpha: a * 0.85, seed: 4010 + i * 7, still: true });
   // pliers and tongs hanging on the wall
   for (let i = 0; i < 3; i++) {
     const x = 560 + i * 60;
