@@ -414,7 +414,8 @@ function mouth(ctx, p, j, st, sd, k) {
     const { fx, fy, ux, uy } = headAxes(p, j);
     // on the face, forward and below the eye; runs back from the front rim
     const P = (a, b) => [hx + (fx * a + ux * b) * r, hy + (fy * a + uy * b) * r];
-    path(ctx, [P(0.86, -0.36 + k * 0.08), P(0.66, -0.44 - k * 0.04), P(0.46, -0.38 + k * 0.14)], o);
+    // k = 0 is a flat line; the middle dips for a smile and rises for a frown
+    path(ctx, [P(0.86, -0.40 + k * 0.06), P(0.66, -0.40 - k * 0.08), P(0.46, -0.40 + k * 0.06)], o);
   }
 }
 
