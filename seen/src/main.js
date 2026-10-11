@@ -23,7 +23,9 @@ function fades(i) {
 function sceneAlpha(i, t) {
   const s = SCENES[i];
   const { fi, fo } = fades(i);
-  if (t < s.start - fi / 2 || t >= s.end + fo / 2) return -1;
+  if (t < s.start - fi / 2) return -1;
+  // the last scene stays up through t = DURATION
+  if (i === SCENES.length - 1 ? t > s.end : t >= s.end + fo / 2) return -1;
   return fi > 0 ? smooth(t, s.start - fi / 2, s.start + fi / 2, ease.sine) : 1;
 }
 
