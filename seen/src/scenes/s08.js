@@ -1,16 +1,20 @@
 // s08 · 77–88 · 我还是想被看见。/ 但这一次，我想先把故事讲完。
 // Late at night, his room. He is editing this very film.
 //  A 77–79.5  (dissolve in) over the shoulder: the back of his head and his
-//             shoulders big at the lower left, the moon in the window, the
-//             laptop screen big at the right — an editor: a preview above, a
+//             shoulders big at the lower left, a dark silhouette against the
+//             lit laptop with a thin rim of screen light, his right arm out to
+//             the mouse; the room is night (only the screen and its spill on
+//             the keys are lit), the moon faint in the window; the laptop
+//             screen big at the right — an editor: a preview above, a
 //             timeline below (one clip per scene of this film, shaded as dark
 //             as the scene is; the last one is still a dashed, empty box).
 //             The preview shows the road we just left (01:17). His hand on the
 //             mouse drags the playhead back — the preview scrubs through the
 //             room and the stage — to 00:00: black, one spotlight, a tiny boy
 //             in its pool.
-//  B 79.5–84  side view in the room, slow push in: the only light on him is a
-//             small round patch of screen light on his face, thrown by the lid
+//  B 79.5–84  side view in the room, slow push in on his face (feet on the
+//             floor; the window stays whole): the only light on him is a
+//             small patch of screen light on his face, thrown by the lid
 //             like a little spotlight he lit himself. Calm; a slight smile, a
 //             blink, he leans in. His right hand rests on the mouse.
 //  C 84–88    over the shoulder again: his hand moves the mouse, the cursor
@@ -18,8 +22,8 @@
 //             tiny boy in the preview looks round, smiles, hands on hips, up
 //             on his toes. 86–88 everything sinks to black; the little spot in
 //             the preview goes last. No applause.
-import { COL, TAU, clamp, lerp, prog, smooth, keys, ease, camera, path, line, rect, ellipse, fillPoly, text } from '../lib.js';
-import { figure, pose, joints, reach, SIT, SIT_LIFT, SIT_BACK, BODY } from '../figure.js';
+import { W, H, COL, TAU, clamp, lerp, prog, smooth, keys, ease, camera, path, line, rect, ellipse, fillPoly, text } from '../lib.js';
+import { figure, pose, joints, reach, SIT, SIT_LIFT } from '../figure.js';
 import { stage } from '../light.js';
 import { screenFront } from '../props.js';
 import { ROOM, room } from '../room.js';
@@ -62,12 +66,15 @@ const SY = VY + VH + 8; // subtitle track
 const SH = 13;
 const HANDLE_Y = RY - 9;
 
-// him, seen from behind: head and shoulders, big, in the lower left
-const BK = { x: 446, hip: 1050, s: 3.0, w: 9 };
+// him, seen from behind: the back of his head and his right shoulder, big,
+// dark against the lit laptop (a silhouette with a thin warm rim of screen
+// light); his right arm goes forward to the mouse
+const BK = { hx: 668, hy: 646, r: 68 };
+const SIL = '#211e1b';
 const TABLE_EDGE = 884;
 const TABLE_FAR = 652;
 const BASE = { y0: SCR.y + SCR.h + 13, y1: 786, far: [SCR.x - 8, SCR.x + SCR.w + 8], near: [SCR.x - 70, SCR.x + SCR.w + 64] };
-const MOUSE_REST = [690, 834]; // where the mouse sits once the playhead is at 00:00
+const MOUSE_REST = [1036, 846]; // where the mouse sits once the playhead is at 00:00
 const WIN = { x: 60, y: 96, w: 270, h: 290 };
 
 // how dark each clip is drawn on the timeline (the film's own darkness arc)
@@ -185,9 +192,16 @@ function miniRoad(c, x, y, w, h) {
   const o = { w: 1.5, wobble: 0.3 };
   path(c, [[x, hz], [x + w, hz]], { ...o, color: COL.inkSoft, seed: 8420 });
   path(c, [[x, far], [x + w, far]], { ...o, seed: 8421 });
-  path(c, [[x, near], [x + w * 0.75, near], [x + w, near - h * 0.06]], { ...o, w: 1.8, seed: 8422 });
-  path(c, [[x + w * 0.2, far], [x + w * 0.37, hz]], { ...o, seed: 8423 });
-  path(c, [[x + w * 0.16, y + h * 0.61], [x + w * 0.37, hz]], { ...o, seed: 8424 });
+  path(c, [[x, near], [x + w, near]], { ...o, w: 1.8, seed: 8422 });
+  for (let i = 0; i < 9; i++) path(c, [[x + w * (0.02 + i * 0.11), (far + near) / 2], [x + w * (0.07 + i * 0.11), (far + near) / 2]], { ...o, w: 1, color: COL.inkSoft, seed: 8425 + i, wobble: 0 });
+  // her lane, going off to the horizon from the far side, and the signpost
+  const lx = x + w * 0.3;
+  path(c, [[lx - w * 0.03, far], [lx + w * 0.004, hz + h * 0.012]], { ...o, w: 1.2, seed: 8423 });
+  path(c, [[lx + w * 0.03, far], [lx + w * 0.012, hz + h * 0.012]], { ...o, w: 1.2, seed: 8424 });
+  const px = x + w * 0.41;
+  path(c, [[px, far], [px, far - h * 0.1]], { ...o, w: 1.2, seed: 8426 });
+  path(c, [[px - w * 0.03, far - h * 0.085], [px, far - h * 0.08]], { ...o, w: 1.6, seed: 8427, wobble: 0 });
+  path(c, [[px, far - h * 0.06], [px + w * 0.032, far - h * 0.06]], { ...o, w: 1.6, seed: 8428, wobble: 0 });
   const s = 0.15;
   figure(c, pose({ x: x + w * 0.36, y: near - 114 * s, s, f: 1, lA1: 0.3, lB1: -0.3, aA1: -0.3, aB1: 0.3 }), { id: 1, cowlick: true, w: 1.3 });
   for (let i = 0; i < 3; i++) {
@@ -331,17 +345,6 @@ function mouse(ctx, x, y) {
   path(ctx, [[x, y - 14], [x, y - 4]], { w: 2, seed: 8551, wobble: 0 });
 }
 
-// 2-bone IK for a front/back-view arm (side +1 = screen right), elbow low
-function ikFront(sh, t, L1, L2, side) {
-  const dx = t[0] - sh[0];
-  const dy = t[1] - sh[1];
-  const d = clamp(Math.hypot(dx, dy), Math.abs(L1 - L2) + 0.01, L1 + L2 - 0.01);
-  const aT = Math.atan2(side * dx, dy);
-  const al = Math.acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d));
-  const be = Math.acos((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2));
-  return { a1: aT - al, a2: Math.PI - be };
-}
-
 function overShoulder(ctx, lt) {
   const fk = smooth(lt, FADE[0], FADE[1], ease.sine);
   // a slow push toward the screen through A, held and a touch more in C
@@ -356,18 +359,13 @@ function overShoulder(ctx, lt) {
     line(ctx, wn.x, wn.y + wn.h / 2, wn.x + wn.w, wn.y + wn.h / 2, { w: 3, seed: 8602 });
     path(ctx, [[wn.x - 14, wn.y + wn.h + 4], [wn.x + wn.w + 14, wn.y + wn.h + 4]], { w: 4, seed: 8603 });
     moon(ctx, wn.x + wn.w * 0.73, wn.y + wn.h * 0.27, 24, {});
-    // him (pose first: the table's edges break where they pass behind him)
-    const m = mouseAt(lt);
-    const cd = cursorAt(lt).down ? 1 : 0;
-    const hp = himPose(lt, m, cd);
-    // the table: far edge against the wall, near edge in front of him
+    // the table: far edge against the wall, near edge in front of him (he
+    // hides part of it)
     path(ctx, [[-60, TABLE_FAR], [SCR.x - 12, TABLE_FAR]], { w: 3, seed: 8610, wobble: 0.5 });
     path(ctx, [[SCR.x + SCR.w + 12, TABLE_FAR], [2000, TABLE_FAR]], { w: 3, seed: 8611, wobble: 0.5 });
-    const gap = behind(hp.j, TABLE_EDGE);
-    if (gap) {
-      path(ctx, [[-60, TABLE_EDGE], [gap[0] - 14, TABLE_EDGE]], { w: 4.4, seed: 8612, wobble: 0.6 });
-      path(ctx, [[gap[1] + 14, TABLE_EDGE], [2000, TABLE_EDGE]], { w: 4.4, seed: 8613, wobble: 0.6 });
-    } else path(ctx, [[-60, TABLE_EDGE], [2000, TABLE_EDGE]], { w: 4.4, seed: 8612, wobble: 0.6 });
+    path(ctx, [[-60, TABLE_EDGE], [2000, TABLE_EDGE]], { w: 4.4, seed: 8612, wobble: 0.6 });
+    const m = mouseAt(lt);
+    const hp = himShape(lt, m, cursorAt(lt).down ? 1 : 0);
     // a mug, late at night
     mug(ctx, 1830, 700);
 
@@ -380,7 +378,8 @@ function overShoulder(ctx, lt) {
     mouse(ctx, m[0], m[1]);
     him(ctx, hp);
 
-    // light: the screen, its spill on the keys and on his back, the moon
+    // light: the screen and its spill on the keys; the moon, faint. The rest
+    // of the room is night.
     const scrK = 1 - smooth(lt, FADE[0], FADE[1] - 0.45, ease.sine);
     const spotK = 1 - smooth(lt, FADE[0] + 0.8, FADE[1] + 0.05, ease.sine);
     // (exactly the beam miniStage() draws)
@@ -390,12 +389,29 @@ function overShoulder(ctx, lt) {
     const showSpot = playhead(lt) < 19;
     stage(ctx, [
       { type: 'poly', pts: [[SCR.x - 10, SCR.y - 10], [SCR.x + SCR.w + 10, SCR.y - 10], [SCR.x + SCR.w + 10, SCR.y + SCR.h + 10], [SCR.x - 10, SCR.y + SCR.h + 10]], k: 0.93 * scrK },
-      { type: 'glow', x: SCR.x + SCR.w * 0.45, y: SCR.y + SCR.h * 0.75, r: 1200, k: 0.46 * scrK },
-      { type: 'poly', pts: [[WIN.x, WIN.y], [WIN.x + WIN.w, WIN.y], [WIN.x + WIN.w, WIN.y + WIN.h], [WIN.x, WIN.y + WIN.h]], k: 0.3 * scrK },
+      { type: 'glow', x: SCR.x + SCR.w * 0.45, y: SCR.y + SCR.h * 0.75, r: 650, k: 0.25 * scrK },
+      { type: 'poly', pts: [[BASE.far[0], BASE.y0], [BASE.far[1], BASE.y0], [BASE.near[1], BASE.y1], [BASE.near[0], BASE.y1]], k: 0.5 * scrK },
+      { type: 'glow', x: SCR.x + SCR.w * 0.4, y: BASE.y1 + 40, r: 420, k: 0.22 * scrK },
+      { type: 'poly', pts: [[WIN.x, WIN.y], [WIN.x + WIN.w, WIN.y], [WIN.x + WIN.w, WIN.y + WIN.h], [WIN.x, WIN.y + WIN.h]], k: 0.15 * scrK },
       { type: 'poly', pts: beam, k: showSpot ? spotK : 0 },
       { type: 'pool', x: bx, y: bfl, rx: 30, ry: 7.5, k: showSpot ? spotK : 0 },
     ], { dark: lerp(0.8, 1, fk), beams: 0 });
+    // the screen's light catching the edge of his head and shoulder
+    rim(ctx, hp, 0.55 * scrK);
   });
+  vignette(ctx, 0.55);
+}
+
+// the corners of the room fall off into the night
+function vignette(ctx, k) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 1.05);
+  g.addColorStop(0, 'rgba(14,13,12,0)');
+  g.addColorStop(1, `rgba(14,13,12,${k})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
 }
 
 function mug(ctx, x, y) {
@@ -404,52 +420,140 @@ function mug(ctx, x, y) {
   path(ctx, [[x + 25, y - 18], [x + 42, y - 14], [x + 42, y + 8], [x + 24, y + 14]], { w: 3, seed: 8632, wobble: 0.3 });
 }
 
-function himPose(lt, m, down) {
-  const s = BK.s;
-  // a breath; a small tilt of the head as he watches
+// his silhouette from behind (screen coords): head, cowlick, the neck and
+// shoulders running out of frame at the lower left, the right arm forward
+// to the mouse, the elbow on the table
+function himShape(lt, m, down) {
+  // a breath; a small tilt of the head as he watches; his body follows the
+  // hand a little
   const br = Math.sin(lt * 1.5) * 1.6;
   const tilt = keys(lt, [[0, 0.02], [DROP, 0.02], [A_END, 0.06], [C_START, 0.04], [C_START + 1.2, 0.0], [11, 0.05]]);
-  // his body follows the hand a little
-  const lean = 0.03 + (m[0] - MOUSE_REST[0]) * 0.0009;
-  const p = pose({ ...SIT_BACK, aA1: 0.22, x: BK.x, y: BK.hip - br, s, view: 'back', lean, head: tilt - lean * 0.6, turn: 0.1 });
-  const j0 = joints(p);
-  // the right hand (screen right) on the mouse
-  const hand = [m[0] - 2, m[1] + 4 + down * 2.5];
-  const r = ikFront(j0.shR, hand, BODY.ua * s, BODY.la * s, 1);
-  p.aB1 = r.a1;
-  p.aB2 = r.a2;
-  return { p, j: joints(p) };
+  const follow = (m[0] - MOUSE_REST[0]) * 0.06;
+  const ox = follow;
+  const oy = -br;
+  const H = [BK.hx + ox + tilt * 40, BK.hy + oy];
+  const r = BK.r;
+  const P = (x, y) => [BK.hx + ox + x, BK.hy + oy + y];
+  // body outline, clockwise from the left of the neck
+  const body = [
+    P(-27, 48), P(-31, 90),
+    P(-105, 108), P(-180, 132), P(-228, 172), P(-250, 240), P(-262, 330), P(-270, 520),
+    P(118, 520), P(128, 340), P(150, 248),
+    P(176, 214), P(198, 176), P(178, 136), P(112, 108), P(34, 90), P(27, 48),
+  ];
+  // the right arm: shoulder -> elbow (on the table) -> wrist -> hand on the mouse
+  const hand = [m[0] - 3, m[1] + 7 + down * 2];
+  const elbow = [BK.hx + 270 + follow * 0.7, TABLE_EDGE - 8];
+  const shoulder = P(168, 200);
+  const wrist = [lerp(elbow[0], hand[0], 0.8), lerp(elbow[1], hand[1], 0.8)];
+  return { H, r, tilt, body, shoulder, elbow, wrist, hand };
 }
 
-// x range where a horizontal line at y passes behind his lines (or null)
-function behind(j, y) {
-  const segs = [[j.hip, j.shoulder], [j.shL, j.elbowA], [j.shR, j.elbowB], [j.elbowB, j.handB]];
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const [a, b] of segs) {
-    if ((a[1] - y) * (b[1] - y) > 0) continue;
-    const k = (y - a[1]) / (b[1] - a[1] || 1e-6);
-    const x = lerp(a[0], b[0], k);
-    lo = Math.min(lo, x);
-    hi = Math.max(hi, x);
+// a closed smooth shape through pts (midpoint quadratics)
+function blob(ctx, pts) {
+  ctx.beginPath();
+  const n = pts.length;
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const m0 = mid(pts[n - 1], pts[0]);
+  ctx.moveTo(m0[0], m0[1]);
+  for (let i = 0; i < n; i++) {
+    const a = pts[i];
+    const b = mid(pts[i], pts[(i + 1) % n]);
+    ctx.quadraticCurveTo(a[0], a[1], b[0], b[1]);
   }
-  return lo <= hi ? [lo, hi] : null;
+  ctx.closePath();
+}
+
+function cowlickPts(hp) {
+  const [hx, hy] = hp.H;
+  const r = hp.r;
+  const a = hp.tilt;
+  // from behind it curls toward screen left
+  const fx = -Math.cos(a);
+  const fy = -Math.sin(a);
+  const ux = Math.sin(a);
+  const uy = -Math.cos(a);
+  const Q = (u, v) => [hx + (fx * u + ux * v) * r, hy + (fy * u + uy * v) * r];
+  return [Q(-0.06, 0.86), Q(-0.04, 1.2), Q(0.14, 1.42), Q(0.38, 1.4)];
+}
+// his ears, sticking out a little either side
+function earPts(hp, side) {
+  const [hx, hy] = hp.H;
+  const r = hp.r;
+  const a = hp.tilt;
+  const cx = hx + side * r * 0.95 * Math.cos(a) - r * 0.1 * Math.sin(a);
+  const cy = hy + side * r * 0.95 * Math.sin(a) + r * 0.1 * Math.cos(a);
+  return [cx, cy];
 }
 
 function him(ctx, hp) {
-  const { p, j } = hp;
-  figure(ctx, p, { id: 1, cowlick: true, legs: false, arms: 'upper', w: BK.w });
-  path(ctx, [j.elbowB, j.handB], { w: BK.w, seed: 1 * 41 + 50, wobble: 1.1 });
+  ctx.save();
+  ctx.fillStyle = SIL;
+  ctx.strokeStyle = SIL;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  // the shoulders and back
+  blob(ctx, hp.body);
+  ctx.fill();
+  // the sleeve: upper arm, forearm resting on the table, the hand on the mouse
+  ctx.lineWidth = 58;
+  ctx.beginPath();
+  ctx.moveTo(hp.shoulder[0], hp.shoulder[1]);
+  ctx.quadraticCurveTo(hp.elbow[0] - 30, hp.elbow[1] + 4, hp.elbow[0], hp.elbow[1]);
+  ctx.stroke();
+  ctx.lineWidth = 40;
+  ctx.beginPath();
+  ctx.moveTo(hp.elbow[0], hp.elbow[1]);
+  ctx.lineTo(hp.wrist[0], hp.wrist[1]);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(hp.hand[0], hp.hand[1], 21, 14, -0.35, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+  // the back of his head: a dark disc with his ears, and his tuft (thick
+  // at the root, curling off thin)
+  for (const side of [-1, 1]) {
+    const [ex, ey] = earPts(hp, side);
+    ellipse(ctx, ex, ey, hp.r * 0.15, hp.r * 0.24, { w: 3.5, fill: SIL, seed: 8562 + side, wobble: 0.3 });
+  }
+  ellipse(ctx, hp.H[0], hp.H[1], hp.r, hp.r, { w: 5, fill: SIL, seed: 8560, wobble: 0.4 });
+  const cw = cowlickPts(hp);
+  path(ctx, cw.slice(0, 3), { w: 17, seed: 8561, wobble: 0.15 });
+  path(ctx, cw.slice(1), { w: 11, seed: 8564, wobble: 0.15 });
+}
+
+// the thin warm edge of light the screen puts on him (drawn over the shade)
+function rim(ctx, hp, a) {
+  if (a <= 0.01) return;
+  const o = { w: 3.6, color: COL.paper, alpha: a, wobble: 0.2 };
+  const [hx, hy] = hp.H;
+  const r = hp.r - 2;
+  // the screen side of his head
+  const arc = [];
+  for (let i = 0; i <= 14; i++) {
+    const t = lerp(-1.05, 0.62, i / 14);
+    arc.push([hx + Math.cos(t) * r, hy + Math.sin(t) * r]);
+  }
+  path(ctx, arc, { ...o, seed: 8570 });
+  // the tuft, lit on its upper side
+  path(ctx, cowlickPts(hp).slice(1).map(([x, y]) => [x + 3, y - 5]), { ...o, w: 3, seed: 8571 });
+  // the top of his right shoulder and the top of the sleeve
+  const b = hp.body;
+  path(ctx, [b[15], b[14], b[13], b[12]].map(([x, y]) => [x - 2, y + 4]), { ...o, seed: 8572 });
+  path(ctx, [[hp.elbow[0] + 6, hp.elbow[1] - 19], [hp.wrist[0] + 2, hp.wrist[1] - 18]], { ...o, alpha: a * 0.8, seed: 8573 });
 }
 
 // ------------------------------------------------------------------ the side view: a little light on his face
 const S = ROOM.s;
 const KX = ROOM.hingeX - 88 * S;
+const SIDE_FACE = [958, 1235]; // his face's world x, and where it sits on screen
 function sideShot(ctx, lt) {
   const u = ease.sine(prog(lt, A_END, C_START));
-  const z = lerp(1.6, 2.15, u);
-  // the floor stays just above the subtitle band
-  const cam = { x: lerp(925, 1026, u), y: ROOM.floor - 362 / z, z };
+  // a slow push in on his face, which holds its place right of centre (so
+  // the window with the moon stays whole at the left all the way); the floor
+  // stays just above the subtitle band
+  const z = lerp(1.55, 1.85, u);
+  const cam = { x: SIDE_FACE[0] - (SIDE_FACE[1] - 960) / z, y: ROOM.floor - 362 / z, z };
   camera(ctx, cam, () => {
     const r = room(ctx, lt, { moon: true });
     const top = r.top;
@@ -466,6 +570,14 @@ function sideShot(ctx, lt) {
     const hB = reach(p, 'B', KX + 38, top - 8);
     p.aB1 = hB.a1;
     p.aB2 = hB.a2;
+    // his feet on the floor (not dangling), a little in front of the stool
+    for (const [leg, dx] of [['A', 20], ['B', 8]]) {
+      const lr = reach(p, leg, p.x + dx * S, ROOM.floor - 2, 'leg');
+      p[`l${leg}1`] = lr.a1;
+      p[`l${leg}2`] = lr.a2;
+    }
+    // the table's near leg breaks where his leg passes in front of it
+    tableLegGap(ctx, joints(p));
     const mouth = keys(lt, [[A_END, 0.12], [3.0, 0.12], [3.9, 0.4]]);
     const blink = lt > 4.15 && lt < 4.3;
     const j = figure(ctx, p, { id: 1, cowlick: true, mouth, eye: blink ? 'closed' : 'dot' });
@@ -482,16 +594,33 @@ function sideShot(ctx, lt) {
     const warm = smooth(lt, 2.9, 4.0);
     haze(ctx, wedge, 0.04);
     stage(ctx, [
-      // the small light on his face
-      { type: 'glow', x: fc[0], y: fc[1], r: hr * lerp(2.4, 2.7, warm), k: lerp(0.86, 1, warm) },
+      // the small light on his face: brightest on the side toward the
+      // screen, drawn out a little along the beam
+      { type: 'glow', x: hx + hr * 0.75, y: fc[1], r: hr * lerp(1.95, 2.15, warm), k: lerp(0.9, 1, warm) },
+      { type: 'glow', x: hx + hr * 2.0, y: fc[1] - hr * 0.1, r: hr * 1.35, k: 0.55 },
       // ... thrown from the screen
       { type: 'poly', pts: wedge, k: 0.13 },
       { type: 'poly', pts: [[l1[0] - 6, l1[1] + 4], [l1[0] + 4, l1[1] + 4], [l2[0] + 4, l2[1] - 4], [l2[0] - 6, l2[1] - 4]], k: 0.9 },
       // the night: just enough to make out the room
-      { type: 'glow', x: 960, y: 660, r: 820, k: 0.2 },
-      { type: 'poly', pts: [[ROOM.win.x, ROOM.win.y], [ROOM.win.x + ROOM.win.w, ROOM.win.y], [ROOM.win.x + ROOM.win.w, ROOM.win.y + ROOM.win.h], [ROOM.win.x, ROOM.win.y + ROOM.win.h]], k: 0.3 },
+      { type: 'glow', x: 960, y: 660, r: 820, k: 0.1 },
+      { type: 'poly', pts: [[ROOM.win.x, ROOM.win.y], [ROOM.win.x + ROOM.win.w, ROOM.win.y], [ROOM.win.x + ROOM.win.w, ROOM.win.y + ROOM.win.h], [ROOM.win.x, ROOM.win.y + ROOM.win.h]], k: 0.16 },
     ], { dark: 0.8 });
   });
+  vignette(ctx, 0.45);
+}
+
+// paper over the table's near leg where his thigh or shin crosses it
+function tableLegGap(ctx, j) {
+  const lx = ROOM.tableX - 120 * S + 13 * S;
+  const segs = [[j.hip, j.kneeA], [j.kneeA, j.footA], [j.hip, j.kneeB], [j.kneeB, j.footB]];
+  ctx.save();
+  ctx.fillStyle = COL.paper;
+  for (const [a, b] of segs) {
+    if ((a[0] - lx) * (b[0] - lx) > 0) continue;
+    const y = lerp(a[1], b[1], (lx - a[0]) / (b[0] - a[0] || 1e-6));
+    ctx.fillRect(lx - 7, y - 13, 14, 26);
+  }
+  ctx.restore();
 }
 
 // a faint warm haze in a light's path (like the beams in light.js)
@@ -503,7 +632,7 @@ function haze(ctx, pts, a) {
 }
 
 export default {
-  fadeIn: 0.8,
+  fadeIn: 0.5,
   draw(ctx, lt, info) {
     if (lt >= A_END && lt < C_START) sideShot(ctx, lt);
     else overShoulder(ctx, lt);

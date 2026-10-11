@@ -1,20 +1,21 @@
 // s06 · 52–64 · 有人鼓掌，有人陪我走一段。/ 我笑了，又慌了—— / 我怎么还是这么在意？
-// Medium tracking shot on the dusk road. Across the road someone gives him a
-// thumbs-up; he glances. A girl with a ponytail runs up from behind and falls
-// into step beside him (on the far lane, in step). A small oval of light
-// blooms at his feet and travels with him; the camera eases in. He smiles at
-// her — then looks down, sees the light, and the smile drops: his step
-// falters, he stops dead, a small jolt back. She takes one more step, stops,
-// turns round. Stillness: he stands in the little light looking down at it;
-// the camera has stopped too. (62.6–64: no line — hold.)
+// Medium tracking shot on the dusk road. A girl with a ponytail comes the
+// other way down the middle of the road, sees him, stops and claps for him;
+// as he comes up she turns round and falls into step a little ahead of him
+// (on the centre line, in step) — nobody ever passes anybody. A small oval of
+// light blooms at his feet and travels with him; the camera eases in. He
+// smiles at her — then looks down, sees the light, and the smile drops: his
+// step falters, he stops dead, a small jolt back. She takes one more step,
+// stops, turns round. Stillness: he stands in the little light looking down
+// at it; the camera has stopped too. (62.6–64: no line — hold.)
 //
 // s06 and s07 are ONE take (s06 fadeOut 0, s07 fadeIn 0): everything lives
 // here in take(); s07.js just runs it on. The take opens on s05's last
 // framing in s05's own world (same road tiles, same walk, same camera, read
 // live from s04.js), so the dissolve from s05 only takes the lamps and the
 // crowds away.
-import { W, H, COL, TAU, clamp, lerp, smooth, keys, ease, hash, camera, path, ellipse } from '../lib.js';
-import { figure, pose, joints, walk, reach, mixPose, LEG, BODY } from '../figure.js';
+import { W, H, COL, TAU, clamp, lerp, smooth, keys, ease, hash, camera, path } from '../lib.js';
+import { figure, pose, walk, reach, LEG, BODY } from '../figure.js';
 import { stage } from '../light.js';
 import { ROAD } from '../road.js';
 import { bird } from '../sets.js';
@@ -27,12 +28,7 @@ const S = 0.85; // him (world scale, as in s05); his feet on the near edge
 const G = R.near;
 const HS = 0.74; // her: a little smaller, and a lane further back —
 const HG = (R.near + R.far) / 2 + 2; // her feet on the centre line
-// While she runs up she is on a slightly nearer line, her head at his head's
-// height, so it passes behind his (paper-filled) head rather than stacking on
-// top of it; she drifts over onto the centre line as she settles into step.
-const HG_RUN = 733;
 const OFF = 122; // she walks this far ahead of him (a clear head and a half)
-const TS = 0.62; // the one who claps, on the far verge
 const TA = 51.4; // tables start (s06 dissolves in from 51.7)
 const TB = 77.7; // tables end (s07 dissolves out until 77.3)
 const DT = 1 / 240;
@@ -78,7 +74,7 @@ function solveStop(phRef, tRef, c, D0, want, tMin) {
   return best;
 }
 
-function integrate(cadKF, amtKF, ph0, s, x0, run) {
+function integrate(cadKF, amtKF, ph0, s, x0) {
   const PH = new Float64Array(N);
   const X = new Float64Array(N);
   const AM = new Float64Array(N);
@@ -94,9 +90,7 @@ function integrate(cadKF, amtKF, ph0, s, x0, run) {
     const ph1 = ph + dph;
     const am1 = keys(t + DT, amtKF, ease.sine);
     const leg = stanceLeg(ph + dph / 2);
-    const dw = -s * (stanceRel(ph1, am1, leg) - stanceRel(ph, am, leg));
-    const k = run ? run.k(t + DT / 2) : 0;
-    x += k > 0 ? k * s * run.stride * dph + (1 - k) * dw : dw;
+    x += -s * (stanceRel(ph1, am1, leg) - stanceRel(ph, am, leg));
     ph = ph1;
     am = am1;
   }
@@ -149,7 +143,7 @@ function himProgram(want2) {
   const D2 = 0.6;
   const st2 = solveStop(land1 + (C2 * R1) / 2, Tr1 + R1, C2, D2, want2, Tr1 + R1);
   const Ts2 = st2.Ts;
-  const Tr2 = 72.0; // he steps off with 可就算没人看，路还是要走
+  const Tr2 = 72.95; // he watches her go up her lane, then steps off (可就算没人看，路还是要走)
   const R2 = 1.1;
   const C3 = 0.75;
   const cad = [[TA, C0], [54.6, C0], [55.8, c1], [Ts1, c1], [STOP1, 0], [Tr1, 0], [Tr1 + R1, C2], [Ts2, C2], [Ts2 + st2.D, 0], [Tr2, 0], [Tr2 + R2, C3]];
@@ -164,21 +158,31 @@ let HT = integrate(HIM.cad, HIM.amt, HIM.ph0, S, LINK.x);
 // matched stride: her speed equals his at the same cadence (so in step, the
 // gap between them holds)
 const AMT_H = Math.asin((S * Math.sin(0.42)) / HS) / 0.42;
-const CR = 1.9; // running cadence
-const RUN_SW = 0.42 * 1.3;
-// She overtakes him at a run in one pass and only eases into his walk once
-// she is clear ahead of him (never slowing while level with him).
-const KA = 55.7;
-const KB = 56.22;
-const RUN = { stride: 4 * LEG * Math.sin(RUN_SW) * 1.18, k: (t) => 1 - smooth(t, KA, KB, ease.sine) };
-const kRun = RUN.k;
-const herG = (t) => lerp(HG_RUN, HG, smooth(t, KA - 0.2, KB + 0.25, ease.inOut));
+const A0H = 0.72 * AMT_H; // her stance standing still
+// She comes the other way (walking left), stops HSTOP facing him, turns to
+// the front and claps for him; as he comes up she turns round and sets off
+// (Tgo) beside him, a little ahead, in step by Tgo + HGO_R.
+const HSTOP = 53.8;
+const HGO_R = 0.8;
+const HGO_WANT = 55.55;
 
 function herProgram(Trh) {
   const c1 = HIM.c1;
-  // in step with him at 56.4 (phase difference an integer)
+  // his phase at 56.4
   const phHis = HIM.ph0 + C0 * (54.6 - TA) + ((C0 + c1) / 2) * 1.2 + c1 * (56.4 - 55.8);
-  const ph0 = phHis - CR * (KA - TA) - ((CR + c1) / 2) * (56.4 - KA);
+  // she sets off from double support (phase 1/4 + n/2) and is in step with
+  // him (a whole number of cycles apart) once up to speed: pick the start
+  // time nearest HGO_WANT for which both hold
+  let Tgo = HGO_WANT;
+  let bestE = 1e9;
+  for (let j = -400; j < 400; j++) {
+    const T = 56.4 - HGO_R / 2 - (phHis - 0.25 + j / 2) / c1;
+    if (Math.abs(T - HGO_WANT) < bestE) {
+      bestE = Math.abs(T - HGO_WANT);
+      Tgo = T;
+    }
+  }
+  const ph0 = phHis - c1 * (56.4 - Tgo - HGO_R / 2);
   // she stops a step after him
   const Dh = 0.5;
   const st1 = { ...solveStop(phHis, 56.4, c1, Dh, 59.85, 59.05) };
@@ -188,13 +192,22 @@ function herProgram(Trh) {
   const st2 = solveStop(st1.land + (C2 * Rh) / 2, Trh + Rh, C2, D2, 69.75, Trh + Rh);
   const Tb = 71.45; // off up her road
   const CB = 0.75;
-  const cad = [[TA, CR], [KA, CR], [56.4, c1], [st1.Ts, c1], [st1.Ts + st1.D, 0], [Trh, 0], [Trh + Rh, C2], [st2.Ts, C2], [st2.Ts + st2.D, 0], [Tb, 0], [Tb + 0.8, CB]];
-  const a0 = 0.72 * AMT_H;
-  const amt = [[TA, AMT_H], [st1.Ts, AMT_H], [st1.Ts + 0.3, a0], [Trh + 0.12, a0], [Trh + 0.8, AMT_H], [st2.Ts, AMT_H], [st2.Ts + 0.35, a0]];
-  return { ph0, STOP1: st1.Ts + st1.D, Tr: Trh, Ts2: st2.Ts, STOP2: st2.Ts + st2.D, Tb, cad, amt };
+  const cad = [[TA, 0], [Tgo, 0], [Tgo + HGO_R, c1], [st1.Ts, c1], [st1.Ts + st1.D, 0], [Trh, 0], [Trh + Rh, C2], [st2.Ts, C2], [st2.Ts + st2.D, 0], [Tb, 0], [Tb + 0.8, CB]];
+  const a0 = A0H;
+  const amt = [[TA, a0], [Tgo, a0], [Tgo + HGO_R, AMT_H], [st1.Ts, AMT_H], [st1.Ts + 0.3, a0], [Trh + 0.12, a0], [Trh + 0.8, AMT_H], [st2.Ts, AMT_H], [st2.Ts + 0.35, a0]];
+  return { ph0, Tgo, STOP1: st1.Ts + st1.D, Tr: Trh, Ts2: st2.Ts, STOP2: st2.Ts + st2.D, Tb, cad, amt };
 }
+// her walk toward him (to the left), landing in double support at HSTOP;
+// integrated as a walk to the right and mirrored (see herX)
+const HA = (() => {
+  const c = 1.0; // a brisk walk
+
+  const st = solveStop(0.25, TA, c, 0.5, HSTOP, TA + 0.5);
+  const T = integrate([[TA, c], [st.Ts, c], [st.Ts + st.D, 0]], [[TA, AMT_H], [st.Ts, AMT_H], [st.Ts + 0.3, A0H]], 0.25, HS, 0);
+  return { T, stop: st.Ts + st.D, end: T.X[N - 1] };
+})();
 function herTable(P) {
-  const T = integrate(P.cad, P.amt, P.ph0, HS, 0, RUN);
+  const T = integrate(P.cad, P.amt, P.ph0, HS, 0);
   // place her so that at 56.4 she is OFF ahead of him
   const i = Math.round((56.4 - TA) / DT);
   const shift = HT.X[i] + OFF - T.X[i];
@@ -212,39 +225,48 @@ export { HIM };
 const HXS = smoothed(HT.X, 0.62);
 export const hisX = (t) => look(HT.X, t);
 export const hisXs = (t) => look(HXS, t);
-export const herX = (t) => look(HRT.X, t);
+// (until she stops, her walk toward him is added on, mirrored)
+export const herX = (t) => look(HRT.X, t) + HA.end - look(HA.T.X, t);
 
 // ------------------------------------------------------------------ places
-// the one who claps for him: on the far verge, a little way behind him — he
-// passed them just before the take comes in, so no crossing is ever seen.
-// They clap as he goes; he glances back. They are out of frame (left) before
-// she runs past their spot.
-const THUMB_X = hisX(52.0) - 225;
-// The fork: a road leaves the far side of the main road through a wide mouth
-// and runs straight away from us to a vanishing point on the horizon, just
-// above the mouth (a narrowing trapezoid: a road going into the distance).
-// She stops on the main road's centre line in front of the mouth; then walks
-// straight up the middle of her road, growing small. His road runs on at
-// full width to the right, so the gap between them opens as he walks.
-const MOUTH = 150; // half-width of the mouth on the far edge
-const DV = 30; // the vanishing point sits a little right of the mouth's centre
+const bez = (p0, p1, p2, u) => [
+  (1 - u) * (1 - u) * p0[0] + 2 * u * (1 - u) * p1[0] + u * u * p2[0],
+  (1 - u) * (1 - u) * p0[1] + 2 * u * (1 - u) * p1[1] + u * u * p2[1],
+];
+// The fork: a lane leaves the far side of the road through a mouth and runs
+// straight away from us toward the horizon, narrowing (its edges fade out
+// just short of the horizon, so they never meet in a peak), with centre
+// dashes and posts shrinking along it and tufts on the field around it (so
+// it lies on the ground), and a blank two-armed signpost at the corner.
+// She stops on the centre line in front of the mouth, then walks up the
+// middle of her lane, growing small, and is gone into the dusk well before
+// he walks past the mouth.
+const MOUTH = 100; // half-width of the mouth on the far edge
+const LANE_END = R.horizon + 15; // the edges fade out just short of the horizon
+const qOf = (y) => (y - R.horizon) / (HG - R.horizon); // depth (1: her lane)
 export const FORK = (() => {
-  // where she stands: on the line from the vanishing point through the
-  // mouth's centre, extended down to her lane
   const sx = herX(HER.STOP2);
-  const x = sx + (DV * (HG - R.far)) / (R.far - R.horizon - 1);
-  const V = [x + DV, R.horizon + 1];
-  return { x, V, P0: [sx, HG], L: [x - MOUTH, R.far], R: [x + MOUTH, R.far] };
+  const x = sx + 4; // the mouth: straight up from where she stands
+  const V = [x + 24, R.horizon + 1];
+  return { x, V, qM: qOf(R.far), P0: [sx, HG], L: [x - MOUTH, R.far], R: [x + MOUTH, R.far], post: [x + MOUTH + 230, R.far - 3] };
 })();
-// a point on her road at depth q (1: where she stood .. 0: the horizon)
-const forkPt = (q) => [FORK.V[0] + (FORK.P0[0] - FORK.V[0]) * q, FORK.V[1] + (FORK.P0[1] - FORK.V[1]) * q];
-// the same depth on either edge (side -1: left, 1: right)
-const forkEdge = (q, side) => {
-  const E = side < 0 ? FORK.L : FORK.R;
-  const qm = (R.far - FORK.V[1]) / (HG - FORK.V[1]); // depth of the mouth
-  const u = q / qm;
-  return [FORK.V[0] + (E[0] - FORK.V[0]) * u, FORK.V[1] + (E[1] - FORK.V[1]) * u];
+// the middle of her lane, and its edges, at depth q
+const laneMid = (q) => {
+  const F = FORK;
+  const y = R.horizon + (HG - R.horizon) * q;
+  if (q >= F.qM) return [lerp(F.x, F.P0[0], (q - F.qM) / (1 - F.qM)), y];
+  return [F.V[0] + ((F.x - F.V[0]) * q) / F.qM, y];
 };
+const laneEdge = (q, side) => {
+  const [x, y] = laneMid(q);
+  return [x + (side * MOUTH * q) / FORK.qM, y];
+};
+// tufts on the field around her lane: [lateral offset at the mouth's scale, depth]
+const FIELD = Array.from({ length: 14 }, (_, k) => {
+  const side = k % 2 ? 1 : -1;
+  const q = FORK.qM * (0.9 - 0.62 * hash(k * 3.7 + 1.3));
+  return [side * (MOUTH + 70 + 330 * hash(k * 5.1 + 2.9)), q];
+});
 // ahead of him at the end: his road runs on out of the frame, toward the
 // lightest part of the sky (seen in the wide shot)
 const BEND = (() => {
@@ -271,9 +293,9 @@ const SXH = clamp(sxFor(ZH), 860, 1160);
 export const HOLD = { z: ZH, sx: SXH };
 const ZW = 0.55; // the last, wide frame (held a second before s08)
 const CAMK = {
-  z: [[52.3, 1.3], [53.7, 1.33], [55.8, 1.35], [57.6, 1.47], [58.7, ZH], [64.9, ZH], [67.6, 1.24], [72.0, 1.24], [75.8, ZW]],
-  sx: [[52.3, 760], [53.7, 560], [54.8, 560], [57.0, 900], [58.7, SXH], [64.9, SXH], [67.6, 700], [72.0, 720], [75.8, 690]],
-  fy: [[52.3, 760], [53.7, 800], [56.6, 800], [58.7, 840], [64.9, 840], [67.6, 795], [72.0, 795], [75.8, 820]],
+  z: [[52.3, 1.3], [53.7, 1.33], [55.8, 1.35], [57.6, 1.47], [58.7, ZH], [64.9, ZH], [67.6, 1.24], [72.0, 1.24], [75.6, ZW]],
+  sx: [[52.3, 760], [53.7, 560], [54.8, 560], [57.0, 900], [58.7, SXH], [64.9, SXH], [67.6, 700], [72.0, 720], [75.6, 690]],
+  fy: [[52.3, 760], [53.7, 800], [56.6, 800], [58.7, 840], [64.9, 840], [67.6, 795], [72.0, 795], [75.6, 820]],
 };
 function s05cam(t) {
   if (LINK.ok && typeof S04.roadCam === 'function') {
@@ -337,11 +359,6 @@ function seg(ctx, y, xa, xb, cuts, o) {
   });
 }
 
-const bez = (p0, p1, p2, u) => [
-  (1 - u) * (1 - u) * p0[0] + 2 * u * (1 - u) * p1[0] + u * u * p2[0],
-  (1 - u) * (1 - u) * p0[1] + 2 * u * (1 - u) * p1[1] + u * u * p2[1],
-];
-const bezPts = (c, n, u0 = 0, u1 = 1) => Array.from({ length: n + 1 }, (_, i) => bez(c[0], c[1], c[2], lerp(u0, u1, i / n)));
 
 function tuft(ctx, x, y, a, seed, sc = 1, lw = 1) {
   path(ctx, [[x - 8 * sc, y - 12 * sc], [x - 2 * sc, y], [x + 2 * sc, y - 16 * sc], [x + 5 * sc, y], [x + 12 * sc, y - 10 * sc]], { w: 2 * lw, color: COL.inkSoft, alpha: a, seed, wobble: 0.3 });
@@ -387,44 +404,67 @@ function takeRoad(ctx, x0, x1, wide, lw) {
       }
     }
   }
-  // her road: from the mouth straight away to the horizon; the far edge
-  // turns into it round soft corners, and its edges stop just short of the
-  // vanishing point
-  if (x1 > F.L[0] - 100 && x0 < F.R[0] + 100) {
-    const qm = (R.far - F.V[1]) / (HG - F.V[1]);
-    const qEnd = 0.03;
-    const le = elbow([F.L[0] - 34, R.far], F.L, forkEdge(qm * 0.55, -1), 30);
-    path(ctx, [...le, ...Array.from({ length: 8 }, (_, k) => forkEdge(lerp(qm * 0.5, qEnd, (k + 1) / 8), -1))], { w: 2.6 * lw, seed: 8300, wobble: 0.5 });
-    const re = elbow(forkEdge(qm * 0.55, 1), F.R, [F.R[0] + 34, R.far], 30);
-    path(ctx, [...Array.from({ length: 8 }, (_, k) => forkEdge(lerp(qEnd, qm * 0.5, k / 8), 1)), ...re], { w: 2.6 * lw, seed: 8301, wobble: 0.5 });
+  // her lane: out of the mouth (round corners) and away to the horizon
+  if (x1 > F.L[0] - 500 && x0 < F.R[0] + 500) {
+    const qM = F.qM;
+    const qE = qOf(LANE_END);
+    const N = 16;
+    const edge = (side) => Array.from({ length: N + 1 }, (_, k) => laneEdge(lerp(qM - 0.05, qE, k / N), side));
+    // each edge in three pieces, lighter into the distance
+    const fade = (pts, seed) => {
+      const cut = [0, 9, 13, N];
+      for (let k = 0; k < 3; k++) path(ctx, pts.slice(cut[k], cut[k + 1] + 1), { w: 2.6 * lw * [1, 0.8, 0.6][k], alpha: [1, 0.7, 0.35][k], seed: seed + k * 7, wobble: 0.4 });
+    };
+    path(ctx, elbow([F.L[0] - 30, R.far], F.L, laneEdge(qM - 0.05, -1), 14), { w: 2.6 * lw, seed: 8300, wobble: 0.5 });
+    fade(edge(-1), 8303);
+    path(ctx, elbow(laneEdge(qM - 0.05, 1), F.R, [F.R[0] + 30, R.far], 14), { w: 2.6 * lw, seed: 8301, wobble: 0.5 });
+    fade(edge(1), 8304);
     // centre dashes, shorter and fainter into the distance (even steps on
     // the ground are even steps in 1/q)
     for (let k = 0; k < 7; k++) {
-      const d0 = 0.42 + k * 0.55;
-      const qa = 1 / (1 + d0);
-      const qb = 1 / (1 + d0 + 0.3);
-      path(ctx, [forkPt(qa), forkPt(qb)], { w: Math.max(1.2, 3 * Math.pow(qa, 0.5)) * lw, color: COL.inkSoft, seed: 8310 + k, wobble: 0.1 });
+      const d0 = 0.22 + k * 0.5;
+      const qa = qM / (1 + d0);
+      const qb = qM / (1 + d0 + 0.25);
+      if (qb < qE + 0.02) break;
+      path(ctx, [laneMid(qa), laneMid(qb)], { w: Math.max(1.2, 3 * Math.pow(qa / qM, 0.6)) * lw, color: COL.inkSoft, alpha: clamp(qa / qM + 0.25), seed: 8310 + k, wobble: 0.1 });
     }
-    // a few marker posts along her road's right, tufts on its left, shrinking
-    [0.62, 0.45, 0.34, 0.26].forEach((q, k) => {
-      const [ex, ey] = forkEdge(q, 1);
-      const px = ex + 30 * q;
-      path(ctx, [[px, ey + 2 * q], [px, ey - 70 * q]], { w: Math.max(1.2, 3.2 * q) * lw, color: COL.inkSoft, seed: 8320 + k, wobble: 0.2 });
+    // marker posts up its right side, shrinking
+    [0.56, 0.42, 0.33, 0.27].forEach((q, k) => {
+      const [ex, ey] = laneEdge(q, 1);
+      const px = ex + 24 * q;
+      path(ctx, [[px, ey + 2 * q], [px, ey - 64 * q]], { w: Math.max(1.2, 3.2 * q) * lw, color: COL.inkSoft, alpha: clamp(q * 2.4), seed: 8320 + k, wobble: 0.2 });
     });
-    [0.55, 0.36].forEach((q, k) => {
-      const [ex, ey] = forkEdge(q, -1);
-      tuft(ctx, ex - 40 * q, ey, undefined, 8325 + k, 1.4 * q, lw);
+    // the field it runs across
+    FIELD.forEach(([w, q], k) => {
+      const [mx, my] = laneMid(q);
+      tuft(ctx, mx + (w * q) / qM, my, clamp(q * 2), 8330 + k, 1.25 * (q / qM), lw);
     });
+    signpost(ctx, F.post[0], F.post[1], lw);
   }
+}
+
+// a blank signpost with two arms: along the road, and up her lane
+function signpost(ctx, x, base, lw) {
+  const top = base - 168;
+  path(ctx, [[x, base], [x + 1, top]], { w: 3.6 * lw, seed: 8340, wobble: 0.3 });
+  const arm = (y, dir, len, rot, sd) => {
+    const c = Math.cos(rot);
+    const sn = Math.sin(rot);
+    const P = (u, v) => [x + u * c - v * sn, y + u * sn + v * c];
+    const h = 10;
+    const u0 = -dir * 8;
+    const u1 = dir * len;
+    path(ctx, [P(u0, -h), P(u1, -h), P(u1 + dir * 14, 0), P(u1, h), P(u0, h)], { w: 2.8 * lw, close: true, fill: COL.paper, seed: sd, wobble: 0.3 });
+  };
+  arm(top + 24, -1, 62, 0.42, 8341); // up her lane
+  arm(top + 58, 1, 66, -0.03, 8342); // on along his road
+  path(ctx, [[x - 5, top - 2], [x + 6, top - 2]], { w: 3 * lw, seed: 8343, wobble: 0.2 });
 }
 
 // Low bushes: a few on the far verge, a few small ones far off on the
 // horizon (bumpy mounds — never round heads on sticks next to stick people)
 const BUSHES = [
-  [THUMB_X - 900, R.far - 3, 1.0],
   [hisX(59.4) - 390, R.far - 3, 0.8],
-  [hisX(59.4) + 380, R.far - 3, 0.7],
-  [FORK.x - 1580, R.far - 3, 1.1],
   [FORK.R[0] + 420, R.far - 3, 0.9],
   [BEND.xn - 700, R.far - 3, 1.0],
   [FORK.V[0] + 260, R.horizon + 2, 0.4],
@@ -451,11 +491,11 @@ function bushes(ctx, x0, x1, lw) {
 }
 
 // ------------------------------------------------------------------ poses
-function walkPose(ph, amt, x, ground, s, sw = 0.4) {
+function walkPose(ph, amt, x, ground, s, sw = 0.4, f = 1) {
   const w = walk(ph, ground, s, amt);
   const a = Math.sin(ph * TAU);
   const k = clamp(amt / 0.58);
-  return pose({ ...w, x, s, f: 1, lean: 0.035, head: -0.02, look: 0, aA1: 0.02 - sw * k * a, aA2: 0.34, aB1: 0.02 + sw * k * a, aB2: 0.34 });
+  return pose({ ...w, x, s, f, lean: 0.035, head: -0.02, look: 0, aA1: 0.02 - sw * k * a, aA2: 0.34, aB1: 0.02 + sw * k * a, aB2: 0.34 });
 }
 const HANG = { aA1: 0.2, aA2: 0.2, aB1: -0.15, aB2: 0.22 };
 const ARMS = ['aA1', 'aA2', 'aB1', 'aB2'];
@@ -479,19 +519,20 @@ function himPose(t) {
   for (const k of ARMS) p[k] = lerp(p[k], HANG[k], hold);
 
   const S2 = M.STOP2;
-  // the glance at the thumbs-up; the smile at her; looking down at the light;
-  // the head coming up; the goodbye
-  p.turn = keys(t, [[52.55, 0], [52.9, 0.58], [53.45, 0.58], [53.8, 0], [57.5, 0], [57.8, 0.62], [58.42, 0.62], [58.62, 0], [64.6, 0], [65.0, 0.62], [65.5, 0.62], [65.9, 0.12], [66.6, 0], [S2 + 0.1, 0], [S2 + 0.4, 0.22], [71.2, 0.22], [71.6, 0.08], [71.9, 0.08], [72.15, 0]]);
-  p.head = keys(t, [[52.55, -0.02], [52.9, -0.1], [53.15, -0.06], [53.45, -0.08], [53.8, -0.02], [58.45, -0.02], [58.8, 0.4], [59.6, 0.46], [64.0, 0.5], [64.95, -0.06], [65.8, -0.03], [S2 + 0.1, -0.03], [S2 + 0.4, -0.08], [71.2, -0.08], [71.85, -0.14], [71.95, -0.12], [72.3, -0.03], [76.5, -0.07]]);
-  p.look = keys(t, [[52.55, 0], [52.9, -0.3], [53.45, -0.3], [53.8, 0], [58.45, 0], [58.75, 1], [64.0, 1], [64.9, -0.1], [65.8, 0], [S2 + 0.1, 0], [S2 + 0.4, -0.3], [71.2, -0.3], [71.85, -0.55], [71.95, -0.5], [72.3, 0]]);
-  const mouth = keys(t, [[52.55, 0], [52.95, 0.35], [53.45, 0.35], [53.8, 0.1], [54.2, 0], [57.6, 0], [57.9, 1], [58.85, 1], [59.12, -0.4], [64.35, -0.4], [64.7, 0], [65.1, 0.7], [65.9, 0.55], [68.0, 0.45], [S2 + 0.4, 0.65], [71.2, 0.55], [71.85, 0.3], [72.3, 0.25], [74, 0.2]]);
+  // the girl clapping up ahead: his head comes up, his face comes round a
+  // little; the smile at her; looking down at the light; the head coming up;
+  // the goodbye
+  p.turn = keys(t, [[53.3, 0], [53.7, 0.22], [55.0, 0.22], [55.5, 0], [57.5, 0], [57.8, 0.62], [58.42, 0.62], [58.62, 0], [64.6, 0], [65.0, 0.62], [65.5, 0.62], [65.9, 0.12], [66.6, 0], [S2 + 0.1, 0], [S2 + 0.4, 0.22], [72.5, 0.22], [72.95, 0.05], [73.3, 0]]);
+  p.head = keys(t, [[53.3, -0.02], [53.7, -0.08], [55.0, -0.07], [55.5, -0.02], [58.45, -0.02], [58.8, 0.4], [59.6, 0.46], [64.0, 0.5], [64.95, -0.06], [65.8, -0.03], [S2 + 0.1, -0.03], [S2 + 0.4, -0.08], [71.3, -0.08], [72.1, -0.13], [72.6, -0.12], [73.2, -0.03], [76.5, -0.07]]);
+  p.look = keys(t, [[53.3, 0], [53.7, -0.25], [55.0, -0.2], [55.5, 0], [58.45, 0], [58.75, 1], [64.0, 1], [64.9, -0.1], [65.8, 0], [S2 + 0.1, 0], [S2 + 0.4, -0.3], [71.3, -0.3], [72.1, -0.5], [72.6, -0.5], [73.2, 0]]);
+  const mouth = keys(t, [[53.6, 0], [54.1, 0.15], [55.2, 0.15], [55.7, 0], [57.6, 0], [57.9, 1], [58.85, 1], [59.12, -0.4], [64.35, -0.4], [64.7, 0], [65.1, 0.7], [65.9, 0.55], [68.0, 0.45], [S2 + 0.4, 0.65], [71.2, 0.55], [72.2, 0.3], [73.2, 0.22], [75, 0.2]]);
 
   // the falter: forward over his slowing feet, then a small jolt back
   const jolt = keys(t, [[58.9, 0], [59.3, 0.4], [59.45, -1], [59.62, -0.7], [60.2, 0.25], [64.0, 0.3], [64.95, 0]], ease.inOut);
   p.lean = 0.035 + 0.075 * Math.max(0, jolt) + 0.1 * Math.min(0, jolt) + 0.07 * hold1 * (1 - smooth(t, 64.0, 64.95));
   // a startled recoil: elbows pulled back and in, hands up to the chest,
   // the head dropping a little
-  const tw = keys(t, [[59.3, 0], [59.42, 1], [59.52, 1], [59.74, 0]]);
+  const tw = keys(t, [[59.3, 0], [59.42, 1], [59.58, 1], [59.68, 0]]);
   if (tw > 0) {
     p.aA1 = lerp(p.aA1, -0.12, tw);
     p.aA2 = lerp(p.aA2, 2.3, tw);
@@ -522,22 +563,6 @@ function himPose(t) {
   return { p, mouth };
 }
 
-function runPose(ph, x, ground, s) {
-  const a = Math.sin(ph * TAU);
-  const c = Math.cos(ph * TAU);
-  const lA1 = RUN_SW * a + 0.12;
-  const lB1 = -RUN_SW * a + 0.12;
-  const lA2 = -0.25 - 1.5 * Math.max(0, c) * Math.max(0, c);
-  const lB2 = -0.25 - 1.5 * Math.max(0, -c) * Math.max(0, -c);
-  const reachL = Math.max(Math.cos(lA1) * BODY.ul + Math.cos(lA1 + lA2) * BODY.ll, Math.cos(lB1) * BODY.ul + Math.cos(lB1 + lB2) * BODY.ll);
-  const lift = 7 * Math.pow(Math.abs(a), 6);
-  return pose({
-    x, y: ground - (reachL + lift) * s, s, f: 1, lA1, lA2, lB1, lB2,
-    aA1: 0.1 - 0.62 * a, aA2: 1.45, aB1: 0.1 + 0.62 * a, aB2: 1.45,
-    lean: 0.17, head: -0.06, look: -0.1, tail: 0.55 + 0.18 * Math.sin(ph * TAU * 2),
-  });
-}
-
 // A turn on the spot in three drawings: the face comes round (side), front,
 // side the other way. k: 0..1.
 function turnPose(a, b, k, ground) {
@@ -555,16 +580,16 @@ function standPose(x, ground, s, f) {
   return pose({ x, y: ground - LEG * s * Math.cos(0.06), s, f, lA1: 0.06, lA2: 0, lB1: -0.06, lB2: 0, ...HANG, lean: 0.02, head: 0.06 });
 }
 
-// her up her own road: q = 1 where she leaves, -> 0 at the horizon. (A
+// her up her own lane: q = 1 where she leaves, -> 0 at the horizon. (A
 // little quicker than a real walk away would be, so that she is small and
-// gone into the distance before he passes the mouth of her road.)
-const BR_V = 0.85;
+// gone into the dusk well before he walks past the mouth of her lane.)
+const BR_V = 1.1;
 function herRoad(t) {
   const u = Math.max(0, t - HER.Tb);
   // she eases into a steady walk over the first 0.8 s
   const e = u < 0.8 ? (u * u) / 1.6 : u - 0.4;
   const q = 1 / (1 + BR_V * e);
-  const [x, y] = forkPt(q);
+  const [x, y] = laneMid(q);
   return { x, y, s: HS * q, q };
 }
 
@@ -589,26 +614,84 @@ function backLegs(ctx, p, j, o) {
 
 function herWalk(t) {
   const ph = look(HRT.PH, t);
-  const p = walkPose(ph, look(HRT.AM, t), herX(t), herG(t), HS, 0.36);
+  const p = walkPose(ph, look(HRT.AM, t), herX(t), HG, HS, 0.36);
   p.tail = 0.12 + 0.06 * Math.sin(ph * TAU * 2);
   p.lean = 0.04;
   return p;
 }
 
+// coming toward him (facing left), arms coming to rest as she stops
+function herComing(t) {
+  const ph = look(HA.T.PH, t);
+  const p = walkPose(ph, look(HA.T.AM, t), herX(t), HG, HS, 0.36, -1);
+  p.tail = 0.12 + 0.06 * Math.sin(ph * TAU * 2);
+  p.lean = 0.04;
+  const rest = smooth(t, HA.stop - 0.35, HA.stop + 0.15);
+  for (const a of ARMS) p[a] = lerp(p[a], HANG[a], rest);
+  p.lean = lerp(0.04, 0.01, rest);
+  // she has seen him: her face comes round a little
+  p.turn = 0.3 * smooth(t, HA.stop - 0.6, HA.stop);
+  return p;
+}
+
+// facing us, clapping for him, her head turned his way (k: 0..1 hands up)
+const CLAP0 = HA.stop + 0.4;
+function herClap(t, k) {
+  const p = pose({ x: herX(t), y: HG - LEG * HS * Math.cos(0.08), s: HS, view: 'front', lA1: 0.08, lB1: 0.08, aA1: 0.16, aA2: 0.08, aB1: 0.16, aB2: 0.08, turn: -0.6, head: -0.06, tail: 0.1 });
+  let hit = 0;
+  if (k > 0.001) {
+    const c = 0.5 + 0.5 * Math.sin(((t - CLAP0) * 3 + 0.25) * TAU); // 0: hands together
+    // elbows down and out, forearms up and in: the hands meet just below
+    // the chin (angles worked out for the front-view arm)
+    const a1 = 0.7 + 0.1 * c;
+    const a2 = -2.07 - 0.5 * c - a1;
+    p.aA1 = lerp(p.aA1, a1, k);
+    p.aA2 = lerp(p.aA2, a2, k);
+    p.aB1 = lerp(p.aB1, a1, k);
+    p.aB2 = lerp(p.aB2, a2, k);
+    hit = k * clamp((0.35 - c) / 0.3);
+  }
+  p.clap = hit;
+  return p;
+}
+
+// side (facing f0) -> front -> side (facing f1); a: side pose, b: front
+function toFront(a, b, k) {
+  return k < 0.45 ? { ...a, turn: Math.max(a.turn ?? 0, 0.75 * (k / 0.45)) } : b;
+}
+function fromFront(b, a, k) {
+  return k < 0.5 ? b : { ...a, turn: Math.max(a.turn ?? 0, 0.6 * (1 - (k - 0.5) / 0.5)) };
+}
+
 function herPose(t) {
   const Q = HER;
+  const TF = HA.stop + 0.05; // she turns to the front, to clap
+  const TS = Q.Tgo - 0.34; // ... and round, to walk with him
   const T1 = Q.STOP1 + 0.08; // she turns round to face him
   const T2 = Q.Tr - 0.42; // ... and back, to walk on
   const T3 = Q.STOP2 + 0.06; // at the fork: she turns to him, a wave
   const T4 = Q.Tb - 0.45; // ... and away
-  let mouth = keys(t, [[55.9, 0], [56.2, 0.6], [57.0, 0.45], [57.8, 0.45], [58.1, 0.8], [58.9, 0.6], [59.4, 0], [60.3, -0.05], [64.85, -0.05], [65.2, 0.65], [68.0, 0.5], [T3 + 0.3, 0.85], [T4, 0.75], [T4 + 0.4, 0.5]]);
+  let mouth = keys(t, [[52.8, 0.2], [HA.stop - 0.5, 0.25], [HA.stop, 0.7], [HA.stop + 0.6, 0.9], [TS, 0.85], [Q.Tgo + 0.6, 0.6], [57.0, 0.45], [57.8, 0.45], [58.1, 0.8], [58.9, 0.6], [59.4, 0], [60.3, -0.05], [64.85, -0.05], [65.2, 0.65], [68.0, 0.5], [T3 + 0.3, 0.85], [T4, 0.75], [T4 + 0.4, 0.5]]);
   let p;
   let alpha = 1;
-  if (t < T1) {
-    const wk = herWalk(t);
-    const kr = kRun(t);
-    p = kr > 0 ? mixPose(wk, runPose(look(HRT.PH, t), herX(t), herG(t), HS), kr) : wk;
-    p.turn = keys(t, [[55.95, 0], [56.2, 0.5], [56.85, 0.5], [57.1, 0], [57.85, 0], [58.1, 0.5], [58.75, 0.5], [59.0, 0]]);
+  if (t < TF) {
+    p = herComing(t);
+  } else if (t < TS + 0.34) {
+    const hands = smooth(t, TF + 0.2, CLAP0) * (1 - smooth(t, TS - 0.3, TS - 0.04));
+    const fr = herClap(t, hands);
+    if (t < TF + 0.3) p = toFront(herComing(t), fr, (t - TF) / 0.3);
+    else if (t < TS) p = fr;
+    else {
+      const wk = herWalk(t);
+      for (const a of ARMS) wk[a] = HANG[a];
+      wk.turn = 0.45;
+      p = fromFront(fr, wk, (t - TS) / 0.34);
+    }
+  } else if (t < T1) {
+    p = herWalk(t);
+    const r = smooth(t, Q.Tgo, Q.Tgo + 0.5);
+    for (const a of ARMS) p[a] = lerp(HANG[a], p[a], r);
+    p.turn = keys(t, [[Q.Tgo, 0.45], [Q.Tgo + 0.5, 0.3], [56.85, 0.3], [57.1, 0], [57.85, 0], [58.1, 0.5], [58.75, 0.5], [59.0, 0]]);
   } else if (t < T2) {
     const st = standPose(herX(t), HG, HS, -1);
     st.head = keys(t, [[T1, 0.06], [T1 + 0.6, 0.14], [64.8, 0.14], [65.2, 0.02]]);
@@ -658,7 +741,8 @@ function herPose(t) {
     p = backWalk(ph, b.x, b.y, b.s);
     p.turn = keys(t, [[Q.Tb, -0.62], [Q.Tb + 0.5, -0.5], [Q.Tb + 1.1, 0]]);
     p.back = true;
-    alpha = clamp((b.q - 0.34) / 0.14);
+    // she fades into the dusk as she grows small
+    alpha = clamp((b.q - 0.27) / 0.13);
     mouth = undefined;
   }
   return { p, mouth, alpha };
@@ -687,55 +771,17 @@ function s05Posts(ctx, t, x0, x1) {
   }
 }
 
-// ------------------------------------------------------------------ the one who claps
-// front-view two-bone IK, elbow out to the side (side: -1 left arm, 1 right)
-function ikOut(sh, tgt, L1, L2, side) {
-  const dx = tgt[0] - sh[0];
-  const dy = tgt[1] - sh[1];
-  const d = clamp(Math.hypot(dx, dy), Math.abs(L1 - L2) + 0.01, L1 + L2 - 0.01);
-  const aT = Math.atan2(side * dx, dy);
-  const al = Math.acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d));
-  const be = Math.acos((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2));
-  let a1 = aT - al;
-  if (a1 < -Math.PI / 2) a1 += TAU; // raise the arm out and up, not across
-  return { a1, a2: Math.PI - be };
-}
-
-function clapper(ctx, t, hx) {
-  const s = TS;
-  const x = THUMB_X;
-  // claps from just before he comes by until he and she are past
-  const k = smooth(t, 52.3, 52.62, ease.out) * (1 - smooth(t, 54.0, 54.4));
-  // eyes on him as he goes
-  const rel = clamp((hx - x) / 240, -1, 1);
-  const c = 0.5 + 0.5 * Math.sin((t * 2.6 + 0.15) * TAU); // 0: hands together
-  const p = pose({ x, y: R.far - 4 - LEG * s * Math.cos(0.1) - 2.5 * s * (1 - c) * k, s, view: 'front', lA1: 0.1, lB1: 0.1, aA1: 0.16, aA2: 0.05, aB1: 0.16, aB2: 0.05, turn: rel * 0.7, head: 0.04 * rel });
-  if (k > 0.001) {
-    // clapping above the head, so it reads at any size
-    const j0 = joints(p);
-    const cx = j0.head[0] + rel * j0.r * 0.15;
-    const ty = j0.head[1] - j0.r * 2.2 + j0.r * 0.35 * c;
-    const gap = j0.r * (0.12 + 1.05 * c);
-    const A = ikOut(j0.shL, [cx - gap, ty], BODY.ua * s, BODY.la * s, -1);
-    const B = ikOut(j0.shR, [cx + gap, ty], BODY.ua * s, BODY.la * s, 1);
-    p.aA1 = lerp(p.aA1, A.a1, k);
-    p.aA2 = lerp(p.aA2, A.a2, k);
-    p.aB1 = lerp(p.aB1, B.a1, k);
-    p.aB2 = lerp(p.aB2, B.a2, k);
-  }
-  const j = figure(ctx, p, { id: 61, mouth: lerp(0.2, 0.8, k), w: Math.max(2, 4.6 * Math.pow(s, 0.85)) });
-  // the claps: short ticks either side of the hands as they meet
-  const hit = k * clamp((0.4 - c) / 0.3);
-  if (hit > 0.02) {
-    const mx = (j.handA[0] + j.handB[0]) / 2;
-    const my = (j.handA[1] + j.handB[1]) / 2;
-    const r0 = 15 * s;
-    const r1 = 30 * s;
-    [[-1, -0.6], [1, -0.6], [-1.15, 0.25], [1.15, 0.25]].forEach(([dx, dy], i) => {
-      const n = Math.hypot(dx, dy);
-      path(ctx, [[mx + (dx / n) * r0, my + (dy / n) * r0], [mx + (dx / n) * r1, my + (dy / n) * r1]], { w: Math.max(1.6, 3.4 * s), alpha: hit, seed: 8452 + i, wobble: 0 });
-    });
-  }
+// ------------------------------------------------------------------ her clapping
+// the claps: short ticks either side of the hands as they meet
+function clapTicks(ctx, j, s, hit) {
+  const mx = (j.handA[0] + j.handB[0]) / 2;
+  const my = (j.handA[1] + j.handB[1]) / 2;
+  const r0 = 15 * s;
+  const r1 = 31 * s;
+  [[-1, -0.7], [1, -0.7], [-1.15, 0.2], [1.15, 0.2]].forEach(([dx, dy], i) => {
+    const n = Math.hypot(dx, dy);
+    path(ctx, [[mx + (dx / n) * r0, my + (dy / n) * r0], [mx + (dx / n) * r1, my + (dy / n) * r1]], { w: Math.max(1.8, 3.6 * s), alpha: hit, seed: 8452 + i, wobble: 0 });
+  });
 }
 
 // ------------------------------------------------------------------ sky
@@ -786,7 +832,6 @@ export function take(ctx, t) {
     takeRoad(ctx, x0, x1, 1 - smooth(cam.z, 0.85, 1.2), lw);
     bushes(ctx, x0, x1, lw);
     s05Posts(ctx, t, x0, x1);
-    if (THUMB_X > x0 - 100 && THUMB_X < x1 + 100) clapper(ctx, t, hisX(t));
 
     washEdge(ctx, t);
     // her (a lane further back: drawn first)
@@ -794,12 +839,16 @@ export function take(ctx, t) {
     const hp = her.p;
     if (hp.x > x0 - 150 && hp.x < x1 + 150 && her.alpha > 0.01) {
       const o = { id: 2, ponytail: true, noTie: true, mouth: her.mouth, alpha: her.alpha, w: Math.max(2, 4.6 * Math.pow(hp.s, 0.85)) * lw };
-      if (hp.back) backLegs(ctx, hp, figure(ctx, hp, { ...o, legs: false }), o);
-      else figure(ctx, hp, o);
+      if (hp.back) {
+        backLegs(ctx, hp, figure(ctx, hp, { ...o, legs: false }), o);
+      } else {
+        const j = figure(ctx, hp, o);
+        if (hp.clap > 0.02) clapTicks(ctx, j, hp.s, hp.clap);
+      }
     }
     // him
     const me = himPose(t);
-    figure(ctx, me.p, { id: 1, cowlick: true, mouth: t < 52.55 ? undefined : me.mouth, w: Math.max(2, 4.6 * Math.pow(S, 0.85)) * lw });
+    figure(ctx, me.p, { id: 1, cowlick: true, mouth: t < 53.3 ? undefined : me.mouth, w: Math.max(2, 4.6 * Math.pow(S, 0.85)) * lw });
 
     // lights: the small light at his feet; the sky ahead getting lighter
     const lights = [];
