@@ -1,17 +1,18 @@
 // s04 · 31–43 · 那就不看了，一个人走。/ 我以为，长大就是不再在乎。
 // His room, his head down at the laptop (s03's last frame). He sits up and
 // reaches for the lid — POV insert: his hand folds the glowing screen shut,
-// the light shrinks to a line and dies. Black. The door opens: a slab of
-// light. He lifts his head to it, stands, and walks out through it, head
-// down, quick and stiff — a silhouette in the bright doorway, gone behind
-// the door. Dissolve: a road at dusk. He walks right, fast and stiff. Across
-// the road a lamp, a child in its pool (as he once was), grown-ups cheering.
-// His face turns halfway toward them, holds, snaps back. He walks on.
+// the light shrinks to a line and dies. Black, and a moment of nothing. The
+// door opens: a slab of light. He lifts his head to it, stands, and walks out
+// through it, head down, quick and stiff — a silhouette in the bright
+// doorway, gone behind the door. Dissolve: a road at dusk. He walks right,
+// fast and stiff. Across the road a lamp, a child on a little box in its pool
+// (as he once was), grown-ups cheering. He all but stops for half a beat, his
+// face turned halfway toward them; then it snaps back and he walks on.
 //
 // The road shot runs on without a cut into s05 (s04 fadeOut 0, s05 fadeIn 0):
 // roadShot() below draws both scenes from one continuous walk.
 import { W, H, COL, TAU, clamp, lerp, prog, smooth, keys, ease, hash, camera, path, rect, fillPoly, dot, ellipse, withLayer, paper, text } from '../lib.js';
-import { figure, pose, walk, reach, SIT, SIT_LIFT, LEG } from '../figure.js';
+import { figure, pose, joints, walk, reach, SIT, SIT_LIFT, LEG } from '../figure.js';
 import { stage } from '../light.js';
 import { onlooker, standLamp, counter } from '../props.js';
 import { room, ROOM, PILE } from '../room.js';
@@ -24,10 +25,11 @@ const T0 = 31; // scene start (global)
 // (global times)
 const POV0 = 31.8; // cut to the POV insert (his hand is going out)
 const POV1 = 33.15; // the lid is shut, black: cut back to the room
-const DOOR = [33.3, 33.9]; // the door swings open
-const LOOKUP = [33.42, 33.72]; // he lifts his head to the light
-const STAND = [33.62, 34.1]; // he stands
-export const WALK0 = 34.1; // first step
+// (true black from POV1 until the door cracks: a moment of nothing)
+const DOOR = [33.7, 34.3]; // the door swings open
+const LOOKUP = [33.82, 34.12]; // he lifts his head to the light
+const STAND = [34.02, 34.5]; // he stands
+export const WALK0 = 34.5; // first step
 const DISS0 = 37.05; // he is half through the doorway: room -> road
 const DISS1 = 37.65;
 
@@ -39,15 +41,18 @@ const WALK1 = 63; // (the table runs on so the far side can be laid out ahead)
 const DT = 1 / 300;
 
 // steps per second. Room: a quick march to the door. Road: fast and stiff;
-// half a beat's hesitation at the cheering (38.4–39.2), a spurt after it;
-// then in s05 it eases down to an even 1.6.
+// at the cheering he all but stops for half a beat (38.55–39.1: both feet
+// nearly planted), then a spurt; in s05 it eases down to an even 1.6.
 function cadence(t) {
-  return keys(t, [[WALK0, 2.8], [36.8, 2.8], [37.3, 2.6], [38.4, 2.6], [38.65, 2.0], [39.15, 2.0], [39.45, 2.75], [41.5, 2.7], [43.0, 2.4], [44.0, 2.4], [47.6, 1.6]]);
+  return keys(t, [[WALK0, 3.15], [36.8, 3.15], [37.3, 2.6], [38.2, 2.6], [38.55, 1.2], [39.1, 1.2], [39.35, 2.75], [41.5, 2.7], [43.0, 2.4], [44.0, 2.4], [47.6, 1.6]]);
 }
 // stride amount for walk() (0 = standing)
 function amtAt(t) {
-  return keys(t, [[WALK0, 0], [WALK0 + 0.45, 0.78], [36.8, 0.78], [37.3, 0.58], [38.4, 0.58], [38.65, 0.46], [39.15, 0.46], [39.45, 0.6], [43.0, 0.58], [44.0, 0.58], [47.6, 1]]);
+  return keys(t, [[WALK0, 0], [WALK0 + 0.4, 0.82], [36.8, 0.82], [37.3, 0.58], [38.2, 0.58], [38.55, 0.12], [39.1, 0.12], [39.4, 0.6], [43.0, 0.58], [44.0, 0.58], [47.6, 1]]);
 }
+// the stance foot's x relative to the hip (s = 1) in walk(): leg B carries
+// the weight while cos(phase) > 0, leg A otherwise (that leg is straight)
+const stanceRel = (ph, sw, legB) => LEG * Math.sin((legB ? -sw : sw) * Math.sin(ph * TAU));
 // stiff (0) .. settled (1): arm swing, lean, head
 export function relaxAt(t) {
   return smooth(t, 44.0, 47.6);
@@ -68,9 +73,12 @@ const G_M = new Float64Array(GN); // mean distance (for the camera)
     const t = WALK0 + (i + 0.5) * DT;
     const sw = 0.42 * amtAt(t);
     const dph = (cadence(t) / 2) * DT;
-    const pm = ph + dph / 2;
-    const d = pm - Math.round(2 * pm) / 2;
-    u += TAU * LEG * sw * Math.cos(TAU * d) * Math.cos(sw * Math.sin(TAU * d)) * dph;
+    // the hip moves so the stance foot stays exactly where it is — also
+    // while the stride changes (a stop, a spurt)
+    const legB = Math.cos(TAU * (ph + dph / 2)) > 0;
+    const sw0 = 0.42 * amtAt(WALK0 + i * DT);
+    const sw1 = 0.42 * amtAt(WALK0 + (i + 1) * DT);
+    u -= stanceRel(ph + dph, sw1, legB) - stanceRel(ph, sw0, legB);
     m += 4 * LEG * Math.sin(sw) * dph;
     ph += dph;
   }
@@ -122,7 +130,14 @@ export function him(ctx, p, o = {}) {
   const { halo = 0.9, ...fo } = o;
   const w = Math.max(2, 4.6 * Math.pow(p.s, 0.85));
   // (a shade under COL.paper: the textured paper around him is a touch darker)
-  if (halo > 0.01) figure(ctx, p, { id: 1, cowlick: true, color: '#e1dacd', headFill: '#e1dacd', w: w * 2.9, eye: 'none', alpha: halo });
+  if (halo > 0.01) {
+    // a wider clearing round the head and the tuft, so his head never merges
+    // with a head or an arm behind it
+    const j = joints(p);
+    const a = j.headAngle;
+    dot(ctx, j.head[0] + Math.sin(a) * j.r * 0.3, j.head[1] - Math.cos(a) * j.r * 0.3, j.r * 1.5, '#e1dacd', halo);
+    figure(ctx, p, { id: 1, cowlick: true, color: '#e1dacd', headFill: '#e1dacd', w: w * 2.9, eye: 'none', alpha: halo });
+  }
   return figure(ctx, p, { id: 1, cowlick: true, ...fo });
 }
 
@@ -236,8 +251,7 @@ function roomEarly(ctx, lt) {
     figure(ctx, sitPose(lt, r.lp), { id: 1, cowlick: true, eye: lt < 0.16 ? 'closed' : 'dot' });
     // the number, still stuck (bobbing in s03's phase)
     counter(ctx, CTR[0], CTR[1] + Math.sin((t - 19) * 2.1) * 3, S03_END.n, { size: 66 });
-    const sc = r.lp.screen;
-    stage(ctx, [r.screenLight, { type: 'glow', x: sc[0] - 40, y: sc[1] + 20, r: 760, k: 0.36 }, { type: 'glow', x: CTR[0] + 10, y: CTR[1], r: 170, k: 0.55 }], { dark: 0.8 });
+    stage(ctx, S03_END.lights(r), { dark: 0.8 });
   });
 }
 
@@ -276,23 +290,23 @@ function roomDark(ctx, t) {
     const lights = [];
     if (r.doorLight) {
       // the doorway, and its wedge on the floor — cut shorter than room.js
-      // draws it, so it stays above the subtitle band
+      // draws it, so it fades out well above the subtitle band (y < ~910)
       const [p0, p1, p2, p3, p4, p5] = r.doorLight;
       const at = (u) => [[lerp(p2[0], p3[0], u), lerp(p2[1], p3[1], u)], [lerp(p5[0], p4[0], u), lerp(p5[1], p4[1], u)]];
-      const L = 100 / 260;
+      const L = 62 / 260;
       const [q3, q4] = at(L);
       lights.push({ type: 'poly', pts: [p0, p1, p2, q3, q4, p5], k: 1 });
       // its far end fades out in thin bands
-      for (let i = 0; i < 6; i++) {
-        const [a3, a4] = at(L + (i * 9) / 260);
-        const [b3, b4] = at(L + ((i + 1) * 9) / 260);
-        lights.push({ type: 'poly', pts: [a3, b3, b4, a4], k: 1 - (i + 1) / 7 });
+      for (let i = 0; i < 10; i++) {
+        const [a3, a4] = at(L + (i * 5) / 260);
+        const [b3, b4] = at(L + ((i + 1) * 5) / 260);
+        lights.push({ type: 'poly', pts: [a3, b3, b4, a4], k: 1 - (i + 1) / 11 });
       }
       // what spills from the doorway into the room: enough to see him by
       lights.push({ type: 'glow', x: DR.x + 70, y: ROOM.floor - 90, r: 1450, k: 0.3 * door });
     }
-    // after the lid shuts the room is black for a moment
-    stage(ctx, lights, { dark: 0.98 - 0.06 * door });
+    // after the lid shuts the room is black (truly) until the door cracks
+    stage(ctx, lights, { dark: lerp(1, 0.92, door) });
   });
 }
 
@@ -397,60 +411,82 @@ function povShot(ctx, lt) {
   const inK = smooth(lt, 0.62, 1.02, ease.out);
   const hx = lerp(2060, grip[0], inK);
   const hy = lerp(420, grip[1], inK);
-  povHand(ctx, hx, hy);
+  povHand(ctx, hx, hy, [L0, L1, L2, L3], faceSide < 0);
 
   stage(ctx, lights, { dark: 0.92 + 0.06 * smooth(lt, 1.92, 2.1) });
 }
 
-// His forearm and hand seen from his own eyes: a tapered sleeve of an arm
-// coming in from the lower right, a mitten hand whose knuckles hook over the
-// edge at (x, y).
-function povHand(ctx, x0, y0) {
-  // drawn 1.25x about the grip point
-  ctx.save();
-  ctx.translate(x0, y0);
-  ctx.scale(1.25, 1.25);
-  const x = 0;
-  const y = 0;
-  const X = (px) => (px - x0) / 1.25; // canvas -> local
-  const Y = (py) => (py - y0) / 1.25;
-  // wrist -> elbow -> shoulder (off frame), widening toward the eye
-  const bone = [[x + 30, y + 40], [X(x0 + 380), Y(y0 + 420 + (y0 - 160) * 0.25)], [X(2300), Y(1300)]];
-  const wid = [19, 44, 130];
-  const left = [];
-  const right = [];
-  for (let i = 0; i < bone.length; i++) {
-    const p0 = bone[Math.max(0, i - 1)];
-    const p1 = bone[Math.min(bone.length - 1, i + 1)];
-    const dx = p1[0] - p0[0];
-    const dy = p1[1] - p0[1];
-    const l = Math.hypot(dx, dy) || 1;
-    const nx = -dy / l;
-    const ny = dx / l;
-    left.push([bone[i][0] + nx * wid[i], bone[i][1] + ny * wid[i]]);
-    right.push([bone[i][0] - nx * wid[i], bone[i][1] - ny * wid[i]]);
-  }
-  fillPoly(ctx, [...left, ...right.slice().reverse()], COL.paper);
-  path(ctx, left, { w: 5, seed: 7380, wobble: 0.8 });
-  path(ctx, right, { w: 5, seed: 7384, wobble: 0.8 });
-  // a crease at the elbow
-  const e = bone[1];
-  path(ctx, [[e[0] - 12, e[1] + 4], [e[0] + 6, e[1] + 14]], { w: 3, seed: 7390, wobble: 0.3, alpha: 0.7 });
-  // knuckles over the edge
-  for (let i = 0; i < 4; i++) {
-    const fx = x - 20 + i * 14;
-    path(ctx, [[fx - 7, y + 12], [fx - 6, y - 5], [fx, y - 11], [fx + 6, y - 5], [fx + 7, y + 12]], { w: 4.2, fill: COL.paper, seed: 7385 + i, wobble: 0.25 });
-  }
-  // the back of the hand
-  ellipse(ctx, x + 6, y + 24, 34, 25, { w: 5, fill: COL.paper, seed: 7381, wobble: 0.5 });
-  // the thumb, tucked along the front
-  path(ctx, [[x - 18, y + 34], [x - 28, y + 24], [x - 26, y + 12]], { w: 4.2, seed: 7389, wobble: 0.25 });
-  ctx.restore();
+// His forearm and hand seen from his own eyes, in the stick-figure language:
+// the forearm one solid tapered stroke of ink coming in from the lower right
+// (the elbow stays off frame); the hand a hook — two fingers that go up over
+// the top edge of the lid at (gx, gy) and down behind it, a thumb on the
+// front. While the screen faces him the fingertips are hidden behind the lid
+// (lid: its screen polygon). A thin paper knockout under the ink keeps it
+// readable where it crosses the dark bezel.
+const HAND_S = 2.8;
+function povHand(ctx, gx, gy, lid, facing) {
+  const P = ([u, v]) => [gx + v * HAND_S, gy + u * HAND_S]; // u: down from the edge, v: right
+  const KO = '#e1dacd';
+  // the forearm: a thin wedge of ink, wrist -> off frame
+  const W0 = P([34, 26]);
+  const A = [2090, 1240];
+  const dx = A[0] - W0[0];
+  const dy = A[1] - W0[1];
+  const l = Math.hypot(dx, dy);
+  const nx = -dy / l;
+  const ny = dx / l;
+  const wedge = (e) => {
+    const a = 6.5 + e;
+    const b = 16 + e;
+    return [[W0[0] + nx * a, W0[1] + ny * a], [A[0] + nx * b, A[1] + ny * b], [A[0] - nx * b, A[1] - ny * b], [W0[0] - nx * a, W0[1] - ny * a]];
+  };
+  fillPoly(ctx, wedge(5), KO, 0.9);
+  // strokes of the hand (in u, v): back of the hand, two fingers, the thumb
+  const BACK = [[34, 26], [21, 15], [8, 5]];
+  const F1 = { front: [[8, 5], [-1, 1], [-8, -4]], tip: [[-8, -4], [-8, -11], [-2, -16], [5, -17]] };
+  const F2 = { front: [[13, 15], [3, 12], [-5, 8]], tip: [[-5, 8], [-6, 2], [-1, -3], [5, -4]] };
+  const THUMB = [[25, 18], [21, 8], [19, 0]];
+  const strokes = [
+    { pts: BACK, w: 15, seed: 7381 },
+    { pts: F1.front, w: 10, seed: 7382 },
+    { pts: F2.front, w: 9, seed: 7383 },
+    { pts: THUMB, w: 8, seed: 7384 },
+  ];
+  const tips = [
+    { pts: F1.tip, w: 10, seed: 7385 },
+    { pts: F2.tip, w: 9, seed: 7386 },
+  ];
+  const draw = (list, ko) => {
+    for (const st of list) {
+      const pts = st.pts.map(P);
+      if (ko) path(ctx, pts, { w: st.w + 9, color: KO, alpha: 0.9, seed: st.seed, wobble: 0 });
+      else path(ctx, pts, { w: st.w, seed: st.seed, wobble: 0.25 });
+    }
+  };
+  // fingertips: behind the lid while its face is toward him
+  const tipsClipped = (ko) => {
+    ctx.save();
+    if (facing) {
+      ctx.beginPath();
+      ctx.rect(-100, -100, W + 200, H + 200);
+      ctx.moveTo(...lid[0]);
+      for (let i = 1; i < lid.length; i++) ctx.lineTo(...lid[i]);
+      ctx.closePath();
+      ctx.clip('evenodd');
+    }
+    draw(tips, ko);
+    ctx.restore();
+  };
+  draw(strokes, true);
+  tipsClipped(true);
+  path(ctx, wedge(0), { w: 2, close: true, fill: COL.ink, seed: 7380, wobble: 0.3 });
+  draw(strokes, false);
+  tipsClipped(false);
 }
 
-// What is on the screen when he shuts it: s03's last close-up — the video
-// (someone dancing), the player bar, 播放 12, stalled. Drawn in s03's
-// 1120x640 screen box.
+// What is on the screen when he shuts it: s03's last close-up — a blank
+// video (he no longer knows what to make), the player bar at 0, 播放 0.
+// Drawn in s03's 1120x640 screen box.
 const CW = 1120;
 const CH = 640;
 let tex = null;
@@ -472,16 +508,9 @@ function screenContent(ctx) {
   const tw = CW - 120;
   const th = 360;
   rect(ctx, tx, ty, tw, th, { w: 4, seed: 9920 });
-  const cx = tx + tw / 2;
-  const fl = ty + th - 46;
-  path(ctx, [[tx + 60, fl], [tx + tw - 60, fl]], { w: 4, wobble: 0.6, seed: 9850 });
-  figure(ctx, pose({ x: cx, y: fl - 114 * 0.95 + 4, s: 0.95, view: 'front', aA1: 2.5, aA2: 0.5, aB1: 1.2, aB2: 1.2, lA1: 0.35, lA2: -0.2, lB1: 0.05, lean: 0.12, head: 0.15 }), { id: 10, mouth: 1, w: 4 });
-  for (const sx of [-1, 1]) path(ctx, [[cx + sx * 130, fl - 200], [cx + sx * 150, fl - 160]], { w: 3, seed: 9851 + (sx > 0 ? 1 : 0), wobble: 0.2 });
   const by = ty + th + 26;
   path(ctx, [[tx, by], [tx + tw, by]], { w: 3, color: COL.inkSoft, seed: 9925, wobble: 0.2 });
-  const bp = tx + tw * 0.78;
-  path(ctx, [[tx, by], [bp, by]], { w: 5, seed: 9926, wobble: 0.2 });
-  dot(ctx, bp, by, 8);
+  dot(ctx, tx, by, 8);
   text(ctx, '播放', tx + 86, CH - 98, { size: 64 });
   counter(ctx, CW / 2 + 70, CH - 102, S03_END.n, { size: 156 });
 }
@@ -494,31 +523,34 @@ const FEET_Y = 800; // his feet on screen
 // where he is (world x of his hip) at global t
 export const roadX = (t) => ROAD_S * gait(t).u;
 
-// Lamps with little crowds on the far side of the road. Each group: its
-// centre x (world), lamp offset/height, pool size, people [dx, scale, mode,
-// head turn], an optional one in the light (star), and for one lamp a sweep
-// onto his path. One lit group every ~3.5 s, dark road between them.
+// Lamps on the far side of the road. Each group: its centre x (world), lamp
+// offset/height, pool size, people [dx, scale, mode, head turn], an optional
+// one in the light (star), for one lamp a sweep onto his path. `off`: a lamp
+// that is not lit (people standing in the shade); `out`: [t0, t1] the lamp
+// goes out. Sparse on purpose — about one lit group per screen, dark road
+// between — so each light is a moment of its own, and what is behind him
+// stays behind.
 export const GROUPS = [];
 // G(tPass, group): place a group so its centre passes him at global tPass
 const G = (tPass, o) => GROUPS.push({ x: roadX(tPass), ...o });
 
-// s04: a child in the pool, grown-ups around cheering and clapping (as it
-// once was for him). He glances at them while they are still ahead
-// (38.15–39.27, so his face reads against open sky), then passes them,
-// head down, at ~40.7.
+// s04: a child on a box in the pool (a little stage, as he once had),
+// grown-ups around cheering and clapping. He glances at them while they are
+// still ahead (38.15–39.27, so his face reads against open sky), then passes
+// them, head down, at ~40.7.
 G(40.7, {
-  seed: 3, lamp: 175, h: 330, rx: 62, glow: [300, 0.4], star: { s: 0.4, kind: 'child' },
+  seed: 3, lamp: 175, h: 330, rx: 62, glow: [300, 0.4], star: { s: 0.4, kind: 'child', box: 34 },
   people: [[-118, 0.6, 'clap'], [-76, 0.64, 'cheer'], [-38, 0.57, 'clap'], [42, 0.58, 'cheer'], [80, 0.65, 'clap'], [120, 0.6, 'cheer']],
 });
-// then a stretch of dark road; s05: lit little groups go by on the far side
-G(45.6, { seed: 4, lamp: -112, h: 250, rx: 58, star: { s: 0.6, kind: 'wave' }, people: [[-54, 0.6, 'clap'], [50, 0.58, 'clap'], [86, 0.63, 'cheer']] });
-// the lamp that swings its beam onto his path (46.0–48.1); he walks through
-export const SWEEP = { x: roadX(47.0), t0: 45.95, t1: 46.65, t2: 47.45, t3: 48.1 };
-GROUPS.push({ x: SWEEP.x + 235, seed: 5, lamp: -125, h: 290, rx: 62, sweep: SWEEP, people: [[-36, 0.6, 'clap'], [4, 0.64, 'cheer'], [44, 0.58, 'clap'], [82, 0.62, 'cheer']] });
-G(52.0, { seed: 7, lamp: 112, h: 270, rx: 58, star: { s: 0.62, kind: 'tada' }, people: [[-56, 0.6, 'cheer'], [50, 0.62, 'clap'], [88, 0.58, 'cheer']] });
-G(55.4, { seed: 8, lamp: -108, h: 235, rx: 54, people: [[-24, 0.62, 'idle', 0.6], [22, 0.6, 'idle', -0.6]] });
-G(58.4, { seed: 9, lamp: 110, h: 300, rx: 56, star: { s: 0.6, kind: 'wave' }, people: [[56, 0.6, 'clap']] });
-G(61.8, { seed: 10, lamp: -100, h: 260, rx: 60, people: [[-36, 0.6, 'cheer'], [34, 0.63, 'clap']] });
+// a lamp that is not lit: two people talking in the shade, nobody watching
+G(44.2, { seed: 4, off: true, lamp: -92, h: 250, people: [[-21, 0.6, 'idle', 0.55], [22, 0.63, 'idle', -0.55]] });
+// s05: the one lamp that swings its beam off its crowd onto his path
+// (45.95–48.1); it trails after him a little, he keeps his line, it falls
+// behind and swings back — and a while later goes out.
+export const SWEEP = { x: roadX(47.0), t0: 45.95, t1: 46.65, t2: 47.45, t3: 48.1, trail: [46.9, 47.7], out: [49.5, 50.6] };
+// (a quieter crowd than the child's: clapping, no arms in the air)
+GROUPS.push({ x: SWEEP.x + 235, seed: 5, lamp: 140, h: 290, rx: 62, sweep: SWEEP, out: SWEEP.out, people: [[-36, 0.6, 'clap'], [4, 0.64, 'idle', 0.35], [44, 0.58, 'clap'], [82, 0.62, 'clap']] });
+// (then nothing more on the far side: s06 opens on an empty dusk road)
 
 // camera for the road at global t: in a little for his glance, then slowly
 // back out while the cheering falls behind; s05 ends with a slow push in
@@ -548,35 +580,79 @@ function starPose(st, x, ground, t, ph) {
 
 // sweep amount 0 (on its own people) .. 1 (on his path)
 const sweepK = (sw, t) => (t < sw.t2 ? smooth(t, sw.t0, sw.t1) : 1 - smooth(t, sw.t2, sw.t3));
+// where on his path the swept beam points: it lands just ahead of him, then
+// trails after him at half his pace for a moment
+const sweepX = (sw, t) => sw.x + 0.5 * (roadX(clamp(t, sw.trail[0], sw.trail[1])) - roadX(sw.trail[0]));
+
+// the far side is drawn a little lighter and thinner than he is (as the
+// horizon and the telegraph poles are), so the planes stay apart
+const FAR_W = 0.85;
+const FAR_A = 0.72;
+const SHADE_A = 0.62; // people standing where no light is (on top of FAR_A)
+const LEAVE_ORDER = [1, 3, 0, 2]; // who turns away first when a lamp goes out
+const farW = (s) => FAR_W * Math.max(2, 4.6 * Math.pow(s, 0.85));
 
 function drawGroup(ctx, g, t, lights) {
   const far = ROAD.far;
   const lx = g.x + g.lamp;
+  // 1 = lit .. 0 = off (an unlit lamp, or one that has gone out)
+  const on = g.off ? 0 : g.out ? 1 - smooth(t, g.out[0], g.out[1], ease.inOut) : 1;
   // where the lamp points: its own pool, or (sweeping) the near road
   const k = g.sweep ? sweepK(g.sweep, t) : 0;
-  const fx = lerp(g.x, g.sweep ? g.sweep.x : g.x, k);
+  const fx = lerp(g.x, g.sweep ? sweepX(g.sweep, t) : g.x, k);
   const fy = lerp(far + 6, ROAD.near + 2, k);
-  const rx = lerp(g.rx, 96, k);
-  const ry = lerp(g.rx * 0.21, 21, k);
-  const src = standLamp(ctx, lx, far - 6, g.h, fx, fy - lerp(40, 70, k), { seed: 5600 + g.seed * 7 });
+  const rx = lerp(g.rx ?? 60, 96, k);
+  const ry = lerp((g.rx ?? 60) * 0.21, 21, k);
+  // an unlit lamp is drawn soft, like the poles on the horizon
+  const src = standLamp(ctx, lx, far - 6, g.h, fx, fy - lerp(40, 70, k), { seed: 5600 + g.seed * 7, w: 4 * FAR_W, alpha: lerp(0.5, 1, on) });
+  // people: cheering while their light is on; arms down, sunk in the shade
+  // when it is off
+  const cheer = (1 - k) * smooth(on, 0.2, 0.8);
+  const shade = lerp(SHADE_A, 1, smooth(on, 0, 0.6));
   g.people.forEach(([dx, sc, mode, tn], i) => {
     // they look at their light; while it is away, they look where it went
     const turn = lerp(tn ?? (dx < 0 ? 0.7 : -0.7), -0.85, k);
-    onlooker(ctx, g.x + dx, far - 4 + (i % 2) * 7, sc, t, { mode, k: 1 - k, ph: hash(g.seed * 17 + i), turn, id: 60 + g.seed * 10 + i });
+    // once their light has gone out they turn their backs, one by one, and
+    // are gone into the dusk (as the crowd in s02 did)
+    let alpha = shade;
+    let back = false;
+    if (g.out) {
+      const tl = g.out[1] - 0.4 + 0.2 * LEAVE_ORDER[i % LEAVE_ORDER.length];
+      if (t > tl) {
+        back = true;
+        alpha *= 1 - smooth(t, tl, tl + 0.7, ease.in);
+      }
+      if (alpha <= 0.01) return;
+    }
+    onlooker(ctx, g.x + dx, far - 4 + (i % 2) * 7, sc, t, { mode, k: cheer, ph: hash(g.seed * 17 + i), turn: back ? 0 : turn, back, id: 60 + g.seed * 10 + i, w: farW(sc), alpha });
   });
-  if (g.star) figure(ctx, starPose(g.star, g.x, far + 8, t, hash(g.seed)), { id: 200 + g.seed, mouth: 1 });
-  lights.push({ type: 'spot', sx: src[0], sy: src[1], fx, fy, rx, ry, k: 1 });
+  if (g.star) {
+    let ground = far + 8;
+    if (g.star.box) {
+      // a little box for a stage
+      const bw = 44;
+      const bh = g.star.box;
+      rect(ctx, g.x - bw / 2, ground - bh, bw, bh, { w: 2.6, fill: COL.paper, over: 2, seed: 5590 + g.seed });
+      path(ctx, [[g.x - bw / 2 + 4, ground - bh + 9], [g.x + bw / 2 - 4, ground - bh + 9]], { w: 1.6, color: COL.inkSoft, seed: 5595 + g.seed, wobble: 0.3 });
+      ground -= bh;
+    }
+    figure(ctx, starPose(g.star, g.x, ground, t, hash(g.seed)), { id: 200 + g.seed, mouth: 1, w: farW(g.star.s) });
+  }
+  if (on <= 0.001) return;
+  lights.push({ type: 'spot', sx: src[0], sy: src[1], fx, fy, rx, ry, k: on });
   const [gr, gk] = g.glow ?? [250, 0.32];
-  lights.push({ type: 'glow', x: g.x + 10, y: far - 70, r: gr, k: lerp(gk, 0.18, k) });
+  lights.push({ type: 'glow', x: g.x + 10, y: far - 70, r: gr, k: lerp(gk, 0.18, k) * on });
 }
 
 // his head: the half-turn at the cheering (s04), then the head comes up as
 // his steps settle (s05, via the walker's relax)
+// (the walk all but stops under it, 38.55–39.1: see cadence())
 function glance(t) {
   return {
     turn: keys(t, [[38.15, 0], [38.5, 0.52], [39.15, 0.52], [39.27, 0]], ease.inOut),
-    head: keys(t, [[38.15, 0], [38.5, -0.24], [39.15, -0.24], [39.27, 0.07], [41.5, 0.07], [43.5, 0]], ease.inOut),
+    head: keys(t, [[38.15, 0], [38.55, -0.4], [39.15, -0.4], [39.27, 0.07], [41.5, 0.07], [43.5, 0]], ease.inOut),
     look: keys(t, [[38.15, 0], [38.5, -0.8], [39.15, -0.8], [39.27, 0.2], [41.5, 0.2], [43.5, 0]], ease.inOut),
+    lean: keys(t, [[38.2, 0], [38.6, -0.05], [39.12, -0.05], [39.3, 0.02], [39.8, 0]], ease.inOut),
   };
 }
 
@@ -587,9 +663,13 @@ export function roadShot(ctx, t) {
   camera(ctx, cam, () => {
     road(ctx, cam.x - half, cam.x + half);
     const lights = [];
-    for (const g of GROUPS) {
-      if (g.x < cam.x - half - 300 || g.x > cam.x + half + 300) continue;
-      drawGroup(ctx, g, t, lights);
+    // the far side, on one layer drawn at ~3/4 ink: it sits back behind him
+    const vis = GROUPS.filter((g) => g.x > cam.x - half - 300 && g.x < cam.x + half + 300);
+    if (vis.length) {
+      withLayer(ctx, (l) => {
+        l.setTransform(ctx.getTransform());
+        for (const g of vis) drawGroup(l, g, t, lights);
+      }, { alpha: FAR_A });
     }
     him(ctx, walker(t, 0, ROAD.near, ROAD_S, glance(t)));
     // dusk: the sky a little lighter far ahead, more so as he walks on

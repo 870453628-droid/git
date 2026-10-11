@@ -1,11 +1,14 @@
 // s05 · 43–52 · （脚步）/ 慢慢地，脚步稳了。
 // One long side-tracking take, no cuts: he keeps to the left-centre of the
-// frame (x ≈ 760) and the road scrolls by. Lit little groups pass on the far
-// side (a waving one at ~45.6, a cheering one at ~52, two people idling
-// beyond); one lamp swings its beam off its own crowd onto his path
-// (46.0–48.1) and he walks straight through the pool while they turn to
-// look. His gait eases from short, quick, stiff steps (2.4 steps/s, arms
-// still, leaning, head down) to an even walk (1.6 steps/s, full swing,
+// frame (x ≈ 760) and the road scrolls by. The far side is sparse — about one
+// light per screen: s04's cheering falls away behind him, an unlit lamp goes
+// by with two people talking in the shade, then one lamp swings its beam off
+// its own (clapping) crowd onto his path (46.0–48.1). The pool lands just
+// ahead of him, trails after him a moment at half his pace, falls away and
+// swings back; he never changes his line or looks. Later (49.5–50.6) that
+// lamp goes out and its people turn away into the dusk, so s06 opens on an
+// empty road. His gait eases from short, quick, stiff steps (2.4 steps/s,
+// arms still, leaning, head down) to an even walk (1.6 steps/s, full swing,
 // upright, head up) — settled by 47.6, before the line at 47.8. The dusk
 // lifts a little (dark 0.55 -> 0.48) and the camera pushes in slightly toward
 // s06's medium shot.

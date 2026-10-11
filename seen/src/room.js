@@ -80,7 +80,7 @@ function dot2(ctx, x, y, a) {
 // Filled bottom row first, so any count looks like a heap.
 export const PILE = (() => {
   const out = [];
-  const rows = [9, 7, 6, 4, 3, 2, 1];
+  const rows = [9, 8, 7, 6, 5, 4, 3, 2, 1];
   let y = 0;
   rows.forEach((n, ri) => {
     const r = 17 - ri * 0.6;

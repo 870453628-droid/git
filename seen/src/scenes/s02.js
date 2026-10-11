@@ -1,26 +1,32 @@
 // s02 · 9–19 · 后来，灯走了，我就追。/ 人散了，我不知道自己在哪。
 // Starts on exactly s01's last frame. He grows in three jump-cuts while the
-// pool of light stays child-sized. The light slides off; he runs after it
+// light stays child-sized: from the first cut it only lights a column as high
+// as the child was, so his head and chest grow out of it into the dark. He
+// crouches to get back in, gives up. The light slides off; he runs after it
 // (side view); each time he arrives it jumps again, faster. The audience's
-// heads follow the light, not him. The light blinks out, the crowd turns its
-// back and fades; a dim grey light finds him at a strange crossroads.
+// heads follow the light, not him. The light blinks out; the house lights
+// come up dim and the crowd turns its back and walks off, one by one, leaving
+// him alone. Black. A dim grey light finds him at a strange crossroads.
 import { COL, TAU, clamp, lerp, prog, smooth, keys, ease, hash, camera, path, dot } from '../lib.js';
-import { figure, pose, mixPose, standY } from '../figure.js';
+import { figure, pose, mixPose, standY, walk, walkPhase } from '../figure.js';
 import { stage } from '../light.js';
-import { onlooker } from '../props.js';
-import { STAGE, AUDIENCE, stageLights } from './s01.js';
+import { STAGE, AUDIENCE, stageLights, person, gaze, AKIMBO } from './s01.js';
 
 const FL = STAGE.floor;
 const T0 = 9; // global start: the audience's clap clock continues s01's
 
 // ------------------------------------------------------------- the light
-// [t0, t1, x0, x1, ease]: the first one slides off, the rest jump
-const STOPS = [960, 1700, 2080, 2420, 2740];
+// [t0, t1, x0, x1, ease]: the first one slides off (a follow-spot sweep,
+// dimmed while it travels), the rest are hard one-frame jumps, so the beam
+// never paints anybody else on its way
+const STOPS = [960, 1780, 2130, 2460, 2770];
+const STEP = (k) => (k > 0 ? 1 : 0);
+const SLIDE = [1.6, 2.2];
 const MOVES = [
-  [1.5, 2.15, STOPS[0], STOPS[1], ease.inOut],
-  [3.6, 3.8, STOPS[1], STOPS[2], ease.out],
-  [4.55, 4.72, STOPS[2], STOPS[3], ease.out],
-  [5.22, 5.36, STOPS[3], STOPS[4], ease.out],
+  [SLIDE[0], SLIDE[1], STOPS[0], STOPS[1], ease.inOut],
+  [3.6, 3.601, STOPS[1], STOPS[2], STEP],
+  [4.55, 4.551, STOPS[2], STOPS[3], STEP],
+  [5.22, 5.221, STOPS[3], STOPS[4], STEP],
 ];
 function lightX(lt) {
   let x = 960;
@@ -28,7 +34,9 @@ function lightX(lt) {
   return x;
 }
 // the beam leans a little once it starts to travel (a follow-spot)
-const lightSX = (lt, lx) => lx - 150 * smooth(lt, 1.5, 2.15);
+const lightSX = (lt, lx) => lx - 150 * smooth(lt, SLIDE[0], SLIDE[1]);
+// while it slides it dims (a sweeping follow-spot), full again on arrival
+const sweepK = (lt) => 1 - 0.55 * smooth(lt, SLIDE[0], SLIDE[0] + 0.15) * (1 - smooth(lt, SLIDE[1] - 0.22, SLIDE[1]));
 // two blinks, then out (15.0)
 function spotK(lt) {
   if (lt < 6.0) return 1;
@@ -39,8 +47,57 @@ function spotK(lt) {
   return 0;
 }
 // the three growth jump-cuts
-const CUTS = [0.4, 0.8, 1.2];
+const CUTS = [0.35, 0.7, 1.05];
 const flash = (lt) => CUTS.reduce((m, c) => Math.max(m, lt >= c ? 1 - prog(lt, c, c + 0.1) : 0), 0);
+
+// The light stays child-sized: from the first growth cut the lit volume is a
+// column as high as the child (s01) was; above it the beam is a faint haze.
+// (A stack of nested polys from the floor up gives a soft top edge.)
+const COL_TOP = [FL - 222, FL - 166]; // dark above [0], full below [1]
+const columnK = (lt) => (lt < CUTS[0] ? 0 : 1 - smooth(lt, SLIDE[0] + 0.05, SLIDE[0] + 0.45));
+function beamAt(L, y) {
+  const t = (y - L.sy) / (L.fy - L.sy);
+  return [lerp(L.sx - L.rx * 0.12, L.fx - L.rx * 0.98, t), lerp(L.sx + L.rx * 0.12, L.fx + L.rx * 0.98, t)];
+}
+function shotALights(lt, lx, k) {
+  const ks = k * sweepK(lt);
+  const [spot, spill] = stageLights(ks, { fx: lx, sx: lightSX(lt, lx) });
+  const kc = columnK(lt);
+  if (kc <= 0) return [spot, spill];
+  spot.k = ks * lerp(1, 0.26, kc);
+  const out = [spot, spill];
+  const N = 14;
+  const kk = 1 - Math.pow(1 - 0.8 * kc * ks, 1 / N);
+  for (let i = 0; i < N; i++) {
+    const y = lerp(COL_TOP[0], COL_TOP[1], (i + 0.5) / N);
+    const [a, b] = beamAt(spot, y);
+    out.push({ type: 'poly', pts: [[a, y], [b, y], [spot.fx + spot.rx * 0.98, FL], [spot.fx - spot.rx * 0.98, FL]], k: kk });
+  }
+  out.push({ type: 'pool', x: spot.fx, y: FL, rx: spot.rx, ry: spot.ry, k: 0.85 * kc * ks });
+  return out;
+}
+// the column's visible haze (stage() only draws haze for spots)
+function columnHaze(ctx, lt, lx, k) {
+  const kc = columnK(lt) * k * sweepK(lt);
+  if (kc <= 0.01) return;
+  const L = { sx: lightSX(lt, lx), sy: STAGE.src[1], fx: lx, fy: FL, rx: STAGE.pool.rx };
+  const [a0, b0] = beamAt(L, COL_TOP[0]);
+  const g = ctx.createLinearGradient(0, COL_TOP[0], 0, FL);
+  g.addColorStop(0, 'rgba(255,250,235,0)');
+  g.addColorStop((COL_TOP[1] - COL_TOP[0]) / (FL - COL_TOP[0]), `rgba(255,250,235,${0.05 * kc})`);
+  g.addColorStop(1, `rgba(255,250,235,${0.02 * kc})`);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(a0, COL_TOP[0]);
+  ctx.lineTo(b0, COL_TOP[0]);
+  ctx.lineTo(lx + L.rx * 0.98, FL);
+  ctx.lineTo(lx - L.rx * 0.98, FL);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
 
 // ------------------------------------------------------------- his run
 // trapezoid speed profile: accelerate over ra, cruise, brake over rd
@@ -53,10 +110,10 @@ function trap(k, ra, rd) {
   return 1 - (0.5 * v * (1 - k) * (1 - k)) / rd;
 }
 const RUNS = [
-  { t0: 2.2, t1: 3.35, x0: 960, x1: 1700, ra: 0.25, rd: 0.3 },
-  { t0: 3.7, t1: 4.35, x0: 1700, x1: 2080, ra: 0.25, rd: 0.3 },
-  { t0: 4.62, t1: 5.12, x0: 2080, x1: 2420, ra: 0.22, rd: 0.3 },
-  { t0: 5.3, t1: 6.38, x0: 2420, x1: 2622, ra: 0.2, rd: 0.34 },
+  { t0: 2.1, t1: 3.35, x0: 960, x1: 1780, ra: 0.25, rd: 0.3 },
+  { t0: 3.7, t1: 4.35, x0: 1780, x1: 2130, ra: 0.25, rd: 0.3 },
+  { t0: 4.62, t1: 5.12, x0: 2130, x1: 2460, ra: 0.22, rd: 0.3 },
+  { t0: 5.3, t1: 6.38, x0: 2460, x1: 2652, ra: 0.2, rd: 0.34 },
 ];
 function boyX(lt) {
   let x = 960;
@@ -72,7 +129,7 @@ function runLegs(u) {
   const leg = (v) => {
     const th = 0.15 + 0.62 * Math.sin(v * TAU);
     const tuck = Math.pow(Math.max(0, Math.cos((v + 0.03) * TAU)), 1.4);
-    return [th, -(0.32 + 1.6 * tuck)];
+    return [th, -(0.32 + 1.2 * tuck)];
   };
   const [lA1, lA2] = leg(u);
   const [lB1, lB2] = leg(u + 0.5);
@@ -87,19 +144,30 @@ function footDrop(p, s) {
 
 // ------------------------------------------------------------- the crowd
 // s01's audience plus more people further along the stage (out of shot at
-// first): a back row only, with gaps where the light will stop.
+// first): a back row only, with gaps where the light will stop (wide enough
+// for the slanted beam, so it never lights one of them).
 const EXTRA = (() => {
   const out = [];
   let i = 0;
   for (let x = 1600; x < 3600; x += 116) {
     const xx = x + (hash(i * 7.1) - 0.5) * 30;
-    const hit = STOPS.some((sx) => xx - sx > -140 && xx - sx < 80);
+    const hit = STOPS.some((sx) => xx - sx > -165 && xx - sx < 85);
     if (!hit) out.push({ x: xx, g: 728 + (hash(i * 2.9) - 0.5) * 8, s: 0.8 * (0.94 + 0.12 * hash(i * 3.3)), i: 100 + i });
     i++;
   }
+  // two more just behind where he ends up (they leave to the left)
+  for (const [x, n] of [[2283, 40], [2588, 41]]) out.push({ x, g: 728, s: 0.8 * (0.94 + 0.12 * hash(n * 3.3)), i: 100 + n });
   return out;
 })();
 const PEOPLE = [...AUDIENCE.map((p) => ({ ...p, orig: true })), ...EXTRA];
+// In the chase shot the crowd stands further back, up on a tier: their heads
+// sit well above his, and they're dimmer, so his ink always wins.
+const TIER = 642;
+const TIER_S = 0.92;
+const TIER_A = 0.5;
+// where he stops the last time; the crowd leaves nearest-first from there
+const LAST_X = 2652;
+const LEAVE = new Map(PEOPLE.filter((p) => p.g < FL).sort((a, b) => Math.abs(a.x - LAST_X) - Math.abs(b.x - LAST_X)).map((p, n) => [p, n]));
 
 // the clapping slows (a time warp on the clap clock) and stops
 function clapClock(lt) {
@@ -113,71 +181,94 @@ function clapClock(lt) {
 // when each original clapper lowers their hands
 const handsDown = (p) => 0.55 + ((p.i * 7) % 10) * 0.17;
 
-function drawPerson(ctx, p, lt, lx, clapT, dim = 1) {
-  // heads follow the light
-  const dx = lx - p.x;
-  const want = clamp(dx / 240, -1, 1) * 0.85;
-  let turn = want;
-  let head = clamp(dx / 300, -1, 1) * 0.12;
+function drawPerson(ctx, p, lt, lx, clapT, shotB) {
+  const g = shotB ? TIER : p.g;
+  const s = shotB ? p.s * TIER_S : p.s;
+  const id = p.orig ? 60 + p.i : p.i;
+  const a = shotB ? TIER_A : 1;
+  // heads (and bodies) follow the light
+  const dx = clamp((lx - p.x) / 260, -1, 1);
+  let turn = dx * 0.95;
+  let head = dx * 0.15;
+  let lean = dx * 0.05;
   let k = 0;
   if (p.orig) {
-    const s01turn = -p.side * 0.7;
+    const g0 = gaze(p);
     const m = smooth(lt, 0.2, 0.7);
-    turn = lerp(s01turn, want, m);
-    head *= m;
+    turn = lerp(g0.turn, turn, m);
+    head = lerp(g0.head, head, m);
+    lean = lerp(g0.lean, lean, m);
     k = 1 - smooth(lt, handsDown(p), handsDown(p) + 0.35);
   }
-  // after the light dies: they turn their backs and drift off
-  const tt = 6.25 + hash(p.i * 1.91) * 0.35;
-  let x = p.x;
-  let a = 1;
-  let back = false;
-  if (lt > tt) {
-    back = true;
-    const dir = hash(p.i * 4.7) < 0.5 ? -1 : 1;
-    x += dir * 70 * smooth(lt, tt, tt + 0.6);
-    a = 1 - smooth(lt, tt + 0.1, tt + 0.55);
-    turn = 0;
-    head = 0;
-    k = 0;
+  // after the light dies (the house lights come up): one by one, nearest
+  // first, they turn their backs, then walk off away from him
+  const tt = 6.3 + (LEAVE.get(p) ?? 99) * 0.07;
+  if (shotB && lt > tt) {
+    const tau = lt - tt - 0.16;
+    if (tau < 0) {
+      person(ctx, p.x, g, s, clapT, { back: true, turn: p.x < LAST_X ? -0.5 : 0.5, id, alpha: a });
+      return;
+    }
+    const dir = p.x < LAST_X ? -1 : 1;
+    const v = 300 + 80 * hash(p.i * 3.1);
+    const d = tau < 0.25 ? (v * tau * tau) / 0.5 : v * (tau - 0.125);
+    const w = walk(walkPhase(d, s) + hash(p.i * 1.7) * 0.5, g, s, 0.9);
+    // they walk off into the dark
+    const fa = 1 - prog(d, 100, 360);
+    if (fa > 0.01) figure(ctx, pose({ x: p.x + dir * d, s, f: dir, ...w, lean: 0.08 }), { id, alpha: a * fa });
+    return;
   }
-  if (a <= 0.01) return;
-  onlooker(ctx, x, p.g, p.s, clapT, {
-    mode: 'clap', k, ph: p.orig ? (p.i * 0.37) % 1 : hash(p.i), turn, head,
-    id: p.orig ? 60 + p.i : p.i, alpha: a * dim, back,
-  });
+  person(ctx, p.x, g, s, clapT, { k, ph: p.orig ? (p.i * 0.37) % 1 : hash(p.i), turn, head, lean, id, alpha: a });
+}
+
+// A paper-coloured halo drawn under him, so line art behind him breaks
+// around his body instead of running through it.
+function knockout(ctx, p) {
+  const w = Math.max(2, 4.6 * Math.pow(p.s, 0.85));
+  figure(ctx, p, { id: 1, cowlick: true, color: COL.paper, w: w * 3.2, wobble: 0, eye: 'none' });
 }
 
 // ------------------------------------------------------------- him
-const AKIMBO = { aA1: 0.8, aA2: -2.1, aB1: 0.8, aB2: -2.1 };
 const HANG = { aA1: 0.1, aA2: 0.06, aB1: 0.1, aB2: 0.06 };
+
+// front-view hip height that puts both feet on the floor
+const frontY = (s, a1, a2) => FL - (Math.cos(a1) * 58 + Math.cos(a1 + a2) * 56) * s;
 
 function boyFront(lt) {
   // growth jump-cuts: each size is a later moment of his life
   if (lt < CUTS[0]) {
-    const rise = 8 * (1 - smooth(lt, 0.08, 0.32));
-    return [pose({ x: STAGE.cx, y: standY(FL, 0.6) - rise, s: 0.6, view: 'front', ...AKIMBO, turn: 0, look: -0.45, head: -0.08, lA1: 0.06, lB1: 0.06 }), 1];
+    return [pose({ x: STAGE.cx, y: standY(FL, 0.6), s: 0.6, view: 'front', ...AKIMBO, turn: 0, look: -0.45, head: -0.08, lA1: 0.06, lB1: 0.06 }), 1];
   }
   if (lt < CUTS[1]) {
+    // his head at the top of the light
     const u = lt - CUTS[0];
-    return [pose({ x: STAGE.cx, y: standY(FL, 0.75), s: 0.75, view: 'front', ...HANG, turn: lerp(-0.5, -0.2, smooth(u, 0, 0.35)), look: -0.2, lA1: 0.07, lB1: 0.07 }), 0.75];
+    return [pose({ x: STAGE.cx, y: standY(FL, 0.75), s: 0.75, view: 'front', ...HANG, turn: lerp(-0.5, -0.2, smooth(u, 0, 0.3)), look: lerp(-0.2, -0.45, smooth(u, 0.1, 0.3)), lA1: 0.07, lB1: 0.07 }), 0.75];
   }
   if (lt < CUTS[2]) {
+    // his head is out of it: he looks up at where it stops
     const u = lt - CUTS[1];
-    return [pose({ x: STAGE.cx, y: standY(FL, 0.9), s: 0.9, view: 'front', aA1: 0.24, aA2: -0.42, aB1: 0.24, aB2: -0.42, turn: lerp(0.45, 0.25, smooth(u, 0, 0.35)), look: 0, head: 0.04, lA1: 0.09, lB1: 0.09 }), 0.3];
+    return [pose({ x: STAGE.cx, y: standY(FL, 0.9), s: 0.9, view: 'front', aA1: 0.24, aA2: -0.42, aB1: 0.24, aB2: -0.42, turn: lerp(0.45, 0.1, smooth(u, 0, 0.25)), look: lerp(0, -0.75, smooth(u, 0.06, 0.25)), head: 0.04, lA1: 0.09, lB1: 0.09 }), 0.3];
   }
-  // full grown, the light starts to slide away to the right; he watches it go
+  // Full grown: only his legs are lit. He crouches, knees out, to get his
+  // head back into the light; it barely reaches his face; he gives up and
+  // straightens. Then the light slides away to the right; he watches it go.
   const s = 1.05;
-  const follow = smooth(lt, 1.55, 2.0);
-  const turn = lerp(lerp(-0.3, 0, smooth(lt, 1.25, 1.5)), 0.9, follow);
-  const mouth = keys(lt, [[1.2, 0.2], [1.6, 0.2], [2.0, -0.25]]);
+  const sq = smooth(lt, 1.12, 1.32) * (1 - smooth(lt, 1.46, 1.66));
+  const lA1 = lerp(0.1, 0.85, sq);
+  const lA2 = lerp(0, -1.7, sq);
+  const follow = smooth(lt, 1.68, 2.05);
+  const turn = lerp(lerp(-0.25, 0, smooth(lt, 1.05, 1.2)), 0.9, follow);
+  const look = lerp(keys(lt, [[1.05, -0.3], [1.14, -0.85], [1.44, -0.85], [1.62, 0.4]]), 0, follow);
+  const mouth = keys(lt, [[1.05, 0.2], [1.15, 0], [1.44, 0.05], [1.62, -0.4], [2.05, -0.3]]);
   const lean = 0.05 * follow;
   // his hand lifts after it, a little, as it goes
-  const reachK = smooth(lt, 1.75, 2.12, ease.out);
+  const reachK = smooth(lt, 1.85, 2.2, ease.out);
+  const lB1 = lA1 + 0.05 * reachK;
   return [pose({
-    x: STAGE.cx, y: standY(FL, s), s, view: 'front', ...HANG,
-    aB1: 0.1 + 0.12 * follow + 0.75 * reachK, aB2: 0.06 + 0.25 * reachK,
-    turn, look: lerp(-0.3, 0, follow), head: 0.06 * follow, lean: lean + 0.03 * reachK, lA1: 0.1, lB1: 0.1 + 0.05 * reachK,
+    x: STAGE.cx, y: Math.max(frontY(s, lA1, lA2), frontY(s, lB1, lA2)), s, view: 'front', ...HANG,
+    aA1: 0.1 + 0.3 * sq, aA2: 0.06 + 0.2 * sq,
+    aB1: 0.1 + 0.3 * sq + 0.12 * follow + 0.75 * reachK, aB2: 0.06 + 0.2 * sq + 0.25 * reachK,
+    turn, look, head: 0.06 * follow + 0.04 * sq, lean: lean + 0.03 * reachK, lA1, lA2, lB1, lB2: lA2,
   }), mouth];
 }
 
@@ -207,32 +298,35 @@ function boySide(lt) {
   // braking: he leans back and his arms swing forward as he pulls up
   const acc = (speed(lt + 0.03) - speed(lt - 0.03)) / 0.06;
   const brake = clamp(-acc / 2600) * clamp(Math.abs(v) / 120);
-  p.lean = 0.03 + 0.27 * run - 0.22 * brake;
+  // lean into the run early (no upright 'sitting in the air' mid-stride)
+  p.lean = 0.03 + 0.27 * Math.sqrt(run) - 0.22 * brake;
   p.aA1 += 0.5 * brake;
   p.aB1 += 0.35 * brake;
   p.head = -0.2 * run - 0.34 * inLight;
   p.look = -0.3 * run - 0.85 * inLight;
   const bob = 6 * s * run * Math.max(0, Math.sin(u * TAU * 2 - 0.6));
   p.y = FL - footDrop(p, s) - bob;
-  // after the light dies: he stands in the dark, head drops a little
-  if (lt > 6.4) {
-    const d = smooth(lt, 6.45, 6.95);
-    p.head = lerp(p.head, 0.22, d);
-    p.look = lerp(p.look, 0.5, d);
+  // after the light dies: he looks up at where it was; the people leave —
+  // he watches the ones ahead go, then the face comes round to the ones
+  // behind him; his head drops
+  if (lt > 6.3) {
+    p.head = keys(lt, [[6.3, p.head], [6.45, -0.3], [6.62, -0.3], [6.82, 0], [7.3, 0.05], [7.55, 0.26]]);
+    p.look = keys(lt, [[6.3, p.look], [6.45, -0.85], [6.62, -0.85], [6.82, 0], [7.3, 0.1], [7.55, 0.6]]);
+    p.turn = keys(lt, [[6.84, 0], [7.02, 0.8], [7.3, 0.8], [7.55, 0.3]]);
   }
-  const mouth = 0.7 * inLight - 0.15 * run;
+  const mouth = lt > 6.3 ? keys(lt, [[6.3, 0], [6.85, -0.4]]) : 0.7 * inLight - 0.15 * run;
   return [p, mouth];
 }
 
 // ------------------------------------------------------------- crossroads
 // A clearing on a plain; paths wind out of it in every direction and thin
 // away toward the horizon (their width shrinks with depth).
-const XR = { hz: 430, j: [960, 722], s: 0.8, rx: 210, ry: 60, him: [890, 740], post: [1102, 730] };
+const XR = { hz: 430, j: [960, 722], s: 0.8, rx: 210, ry: 60, him: [890, 740], post: [1200, 756] };
 const PATHS = [
   { th: 97, C: [925, 880], F: [880, 1000], h0: 46 }, // the way he came, toward us
   { th: 181, C: [440, 705], F: [-760, 630], h0: 15 },
   { th: 234, C: [620, 560], F: [330, 433], h0: 26 },
-  { th: 276, C: [1000, 540], F: [1230, 432], h0: 27 },
+  { th: 280, C: [1020, 540], F: [1060, 432], h0: 27 },
   { th: 359, C: [1560, 705], F: [2800, 615], h0: 15 },
 ];
 const ell = (a) => [XR.j[0] + XR.rx * Math.cos(a), XR.j[1] + XR.ry * Math.sin(a)];
@@ -268,12 +362,17 @@ const XR_GEOM = (() => {
       L.push([q[0] - ty * h, q[1] + tx * h]);
       R.push([q[0] + ty * h, q[1] - tx * h]);
     });
-    // the near path stops above the subtitles
-    const cut = (arr) => (P.th < 135 && P.th > 45 ? arr.filter((q) => q[1] < 960) : arr);
-    edges.push(cut(L), cut(R));
     // mouth angles, unwrapped around th
     const un = (a) => th + Math.atan2(Math.sin(a - th), Math.cos(a - th));
-    const m = [un(ellAng(L[0])), un(ellAng(R[0]))].sort((x, y) => x - y);
+    const aL = un(ellAng(L[0]));
+    const aR = un(ellAng(R[0]));
+    // each edge starts on the rim, so the mouths close
+    L.unshift(ell(aL));
+    R.unshift(ell(aR));
+    // the near path stops below the frame (it fades out by screen y)
+    const cut = (arr) => (P.th < 135 && P.th > 45 ? arr.filter((q) => q[1] < 1000) : arr);
+    edges.push(cut(L), cut(R));
+    const m = [aL, aR].sort((x, y) => x - y);
     mouths.push({ th, lo: m[0], hi: m[1] });
   }
   // the clearing's rim between neighbouring path mouths
@@ -291,18 +390,20 @@ const XR_GEOM = (() => {
   return { edges, rims };
 })();
 
-function crossroads(ctx) {
+function crossroads(ctx, cam) {
   path(ctx, [[-1600, XR.hz], [3600, XR.hz]], { w: 2.2, color: COL.inkSoft, seed: 9300, wobble: 0.5 });
+  // the way he came fades out toward us, by SCREEN y, so it is gone above
+  // the subtitle band at every zoom (one stroke, a gradient: no dashes)
+  const y0 = cam.y + (800 - 540) / cam.z;
+  const y1 = cam.y + (885 - 540) / cam.z;
+  const fade = ctx.createLinearGradient(0, y0, 0, y1);
+  fade.addColorStop(0, COL.ink);
+  fade.addColorStop(1, 'rgba(31,28,25,0)');
   XR_GEOM.edges.forEach((e, i) => {
-    // the way he came fades out toward us (keeps the subtitle band calm)
     const near = e[e.length - 1][1] > XR.j[1];
     if (!near) return path(ctx, e, { w: 3.2, seed: 9310 + i, wobble: 0.8 });
-    const n = e.length;
-    for (let k = 0; k < n - 1; k += 2) {
-      const y = e[k][1];
-      const a = 1 - prog(y, 790, 950);
-      if (a > 0.02) path(ctx, e.slice(k, Math.min(n, k + 3)), { w: 3.2, alpha: a, seed: 9310 + i * 40 + k, wobble: 0.6 });
-    }
+    const pts = e.filter((q) => q[1] < y1 + 20);
+    path(ctx, pts, { w: 3.2, color: fade, seed: 9310 + i, wobble: 0.6 });
   });
   XR_GEOM.rims.forEach((e, i) => path(ctx, e, { w: 3, seed: 9330 + i, wobble: 0.6 }));
   // a few pencil tufts on the plain
@@ -334,33 +435,37 @@ function signpost(ctx, x, base) {
   path(ctx, [[x - 7, top - 2], [x + 8, top - 2]], { w: 4, seed: 9404, wobble: 0.2 });
 }
 
+// the crossroads comes up after the crowd has gone (XR_T)
+const XR_T = 7.7;
 function boyCross(lt) {
   const s = XR.s;
-  const turn = keys(lt, [[7.85, 0], [8.0, 0], [8.35, -0.95], [8.6, -0.95], [9.0, 0.95], [9.2, 0.95], [9.55, 0.05]]);
-  const head = keys(lt, [[7.85, 0], [8.0, 0], [8.35, -0.1], [8.6, -0.1], [9.0, 0.1], [9.2, 0.1], [9.55, 0.06]]);
-  const lean = keys(lt, [[8.0, 0], [8.35, -0.025], [8.6, -0.025], [9.0, 0.025], [9.2, 0.025], [9.55, 0]]);
-  const look = keys(lt, [[9.2, 0], [9.6, 0.4]]);
+  const turn = keys(lt, [[8.3, 0], [8.42, 0], [8.72, -0.95], [8.92, -0.95], [9.27, 0.95], [9.42, 0.95], [9.72, 0.05]]);
+  const head = keys(lt, [[8.3, 0], [8.42, 0], [8.72, -0.1], [8.92, -0.1], [9.27, 0.1], [9.42, 0.1], [9.72, 0.06]]);
+  const lean = keys(lt, [[8.42, 0], [8.72, -0.025], [8.92, -0.025], [9.27, 0.025], [9.42, 0.025], [9.72, 0]]);
+  const look = keys(lt, [[9.42, 0], [9.8, 0.4]]);
   return pose({ x: XR.him[0], y: standY(XR.him[1], s), s, view: 'front', ...HANG, turn, head, lean, look, lA1: 0.07, lB1: 0.07 });
 }
 
 // ------------------------------------------------------------- camera
 function followTarget(lt) {
-  return 0.5 * (boyX(lt) + lightX(lt)) + 60;
+  // once the light is gone, the shot settles on him alone in the middle
+  return lerp(0.5 * (boyX(lt) + lightX(lt)) + 60, boyX(lt), smooth(lt, 6.2, 6.9));
 }
 // shot A (growth, the light slides off): from s01's camera, ease back
 // and right so the light's new place is in frame
+const CUT_B = 2.2;
 function camA(lt) {
-  const m = smooth(lt, 1.45, 2.25);
+  const m = smooth(lt, 1.55, 2.3);
   return { x: lerp(STAGE.cam.x, 1250, m), y: lerp(STAGE.cam.y, 600, m), z: lerp(STAGE.cam.z, 1.3, m) };
 }
-// shot B (the chase, from the cut at 2.2): side tracking, a box-filtered
+// shot B (the chase, from the cut at CUT_B): side tracking, a box-filtered
 // follow (a pure function of time), starting tight and easing wider
 function camB(lt) {
   let x = 0;
   const N = 14;
   for (let i = 0; i < N; i++) x += followTarget(lt - (i / (N - 1)) * 0.5);
   x /= N;
-  const w = smooth(lt, 2.2, 3.4);
+  const w = smooth(lt, CUT_B, 3.4);
   return { x: lerp(1180, x, w), y: lerp(585, 575, w), z: lerp(1.55, 1.36, w) };
 }
 
@@ -369,43 +474,50 @@ export default {
   fadeIn: 0,
   fadeOut: 0, // s03 dissolves in from this scene's last frame itself
   draw(ctx, lt) {
-    if (lt < 7.0) {
-      const shotA = lt < 2.2;
+    if (lt < XR_T) {
+      const shotA = lt < CUT_B;
       const cam = shotA ? camA(lt) : camB(lt);
       const lx = lightX(lt);
       const k = spotK(lt);
       const clapT = clapClock(lt);
       const half = 960 / cam.z + 120;
       camera(ctx, cam, () => {
+        const vis = (p) => Math.abs(p.x - cam.x) < half + (lt > 6.3 ? 500 : 0);
+        // back row, him, front row (the front row is out of the chase shot)
+        for (const p of PEOPLE) if (p.g < FL && vis(p)) drawPerson(ctx, p, lt, lx, clapT, !shotA);
+        const [p, mouth] = shotA ? boyFront(lt) : boySide(lt);
+        if (!shotA) knockout(ctx, p);
         // the same floor line as s01
         path(ctx, [[-200, FL], [3800, FL]], { w: 3.4, seed: 900, wobble: 0.6 });
-        const vis = (p) => Math.abs(p.x - cam.x) < half;
-        // back row, him, front row (the front row is out of the chase shot)
-        // in the chase shot the crowd sits back in the dark a little
-        const dim = shotA ? 1 : 0.8;
-        for (const p of PEOPLE) if (p.g < FL && vis(p)) drawPerson(ctx, p, lt, lx, clapT, dim);
-        const [p, mouth] = shotA ? boyFront(lt) : boySide(lt);
         figure(ctx, p, { id: 1, cowlick: true, mouth });
-        if (shotA) for (const p of PEOPLE) if (p.g >= FL && vis(p)) drawPerson(ctx, p, lt, lx, clapT);
+        if (shotA) for (const p of PEOPLE) if (p.g >= FL && vis(p)) drawPerson(ctx, p, lt, lx, clapT, false);
 
-        const dark = lt < 6.4 ? STAGE.dark - 0.12 * flash(lt) : lerp(STAGE.dark, 1, smooth(lt, 6.5, 6.95));
+        // after the spot dies the house lights come up, dim, while the crowd
+        // leaves; then black
+        const house = smooth(lt, 6.25, 6.5);
+        const dark = lt < 6.25 ? STAGE.dark - 0.12 * flash(lt) : lerp(lerp(STAGE.dark, 0.8, house), 1, smooth(lt, XR_T - 0.3, XR_T, ease.sine));
         // a broad, faint wash over the stage once the light starts to travel,
-        // so he reads when he is out of it (gone with the light)
-        const wash = { type: 'glow', x: cam.x, y: FL - 160, r: 1150, k: 0.24 * smooth(lt, 1.4, 2.0) * k };
-        stage(ctx, [...stageLights(k, { fx: lx, sx: lightSX(lt, lx) }), wash], { dark });
+        // so he reads when he is out of it
+        const wash = { type: 'glow', x: cam.x, y: FL - 160, r: 1150, k: 0.24 * smooth(lt, 1.6, 2.1) * k + 0.2 * house };
+        const lights = shotA ? shotALights(lt, lx, k) : stageLights(k, { fx: lx, sx: lightSX(lt, lx) });
+        stage(ctx, [...lights, wash], { dark });
+        if (shotA) columnHaze(ctx, lt, lx, k);
       });
     } else {
       // the crossroads: a dim grey light comes up on him; then a slow pull
       // back to a wide shot: many roads, a blank signpost, and him, small
-      const pull = smooth(lt, 8.6, 10.3, ease.inOut);
+      const pull = smooth(lt, 8.95, 10.4, ease.inOut);
       const z = lerp(1.55, 0.8, pull);
       const cy = lerp(560, 610, pull);
       const cx = lerp(1000, 975, pull);
-      camera(ctx, { x: cx, y: cy, z }, () => {
-        crossroads(ctx);
+      const cam = { x: cx, y: cy, z };
+      camera(ctx, cam, () => {
+        crossroads(ctx, cam);
         signpost(ctx, XR.post[0], XR.post[1]);
-        figure(ctx, boyCross(lt), { id: 1, cowlick: true, mouth: -0.1 });
-        const up = smooth(lt, 7.05, 8.0, ease.sine);
+        const p = boyCross(lt);
+        knockout(ctx, p);
+        figure(ctx, p, { id: 1, cowlick: true, mouth: -0.2 });
+        const up = smooth(lt, XR_T + 0.05, XR_T + 0.75, ease.sine);
         stage(ctx, [{ type: 'glow', x: 980, y: 650, r: 1250, k: 0.3 * up }], { dark: lerp(1, 0.72, up) });
       });
     }
