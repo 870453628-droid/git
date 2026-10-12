@@ -155,14 +155,22 @@ function doorLights(r, door) {
     const [b3, b4] = at((i + 1) / 16);
     lights.push({ type: 'poly', pts: [a3, b3, b4, a4], k: Math.pow(1 - (i + 0.5) / 16, 1.3) });
   }
-  lights.push({ type: 'glow', x: DR.x + 60, y: ROOM.floor - 120, r: 1300, k: 0.26 * door });
+  // the light spilling from the doorway into the room, across him
+  lights.push({ type: 'glow', x: DR.x - 20, y: ROOM.floor - 210, r: 1250, k: 0.5 * door });
+  lights.push({ type: 'glow', x: DR.x - 20, y: ROOM.floor - 200, r: 520, k: 0.35 * door });
   return lights;
 }
 
 function roomShot(ctx, t) {
   const door = smooth(t, DOOR[0], DOOR[1], ease.inOut);
-  const k = smooth(t, 55.5, CUT_D + 0.1, ease.in);
-  const cam = { x: lerp(1270, 1330, k), y: lerp(585, 600, k), z: lerp(1.16, 1.24, k) };
+  // close on him in the black; the light comes up on him from the right; he
+  // lifts his head to it; the camera draws back and swings right to show
+  // the open door, and goes with him toward it
+  const cam = {
+    x: keys(t, [[54.0, 1000], [55.0, 1012], [55.95, 1290], [CUT_D + 0.1, 1345]]),
+    y: keys(t, [[54.0, 586], [55.0, 590], [55.95, 590], [CUT_D + 0.1, 600]]),
+    z: keys(t, [[54.0, 1.95], [55.0, 2.06], [55.95, 1.18], [CUT_D + 0.1, 1.26]]),
+  };
   camera(ctx, cam, () => {
     const r = room(ctx, t, { open: 0, door, moon: true, balls: BALLS });
     const p = t < WALK_R ? sitPose(t, r.lp.lidEnd) : walkerPose(gR(t), roomWalkX(t), walkGround(roomWalkX(t)), RS, { lean: 0.06, head: 0.22, look: 0.4 });
@@ -171,7 +179,7 @@ function roomShot(ctx, t) {
     // the moon in the window, just
     const wn = ROOM.win;
     lights.push({ type: 'poly', pts: [[wn.x, wn.y], [wn.x + wn.w, wn.y], [wn.x + wn.w, wn.y + wn.h], [wn.x, wn.y + wn.h]], k: 0.1 * door });
-    stage(ctx, lights, { dark: lerp(1, 0.9, smooth(t, DOOR[0], DOOR[0] + 0.3)), beams: 0 });
+    stage(ctx, lights, { dark: lerp(1, 0.95, smooth(t, DOOR[0], DOOR[0] + 0.3)), beams: 0 });
   });
   // the first crack of the door: a hairline of light
   if (t > DOOR[0] && t < DOOR[0] + 0.25) {
@@ -230,12 +238,14 @@ const G = 760; // his ground
 const HS = 1.0; // his scale
 // lanes of passers-by: farther ones higher and smaller; 'f' is the one he
 // follows, a step in front of his own line
+// k: how fast the lane slides past when the camera travels (parallax; his
+// own line is 1)
 const LANES = [
-  { g: 652, s: 0.64, a: 0.62 },
-  { g: 703, s: 0.8, a: 0.8 },
-  { g: 774, s: 1.02, a: 1 },
-  { g: 834, s: 1.14, a: 1 },
-  { g: 952, s: 1.46, a: 1 },
+  { g: 652, s: 0.64, a: 0.62, k: 0.6 },
+  { g: 703, s: 0.8, a: 0.8, k: 0.8 },
+  { g: 774, s: 1.02, a: 1, k: 1 },
+  { g: 834, s: 1.14, a: 1, k: 1.16 },
+  { g: 952, s: 1.46, a: 1, k: 1.5 },
 ];
 
 // his walk: dazed; slows and stops (60.3); after someone (62.85–65.75)
@@ -276,15 +286,32 @@ const FROZEN = 72.9;
 // ------------------------------------------------------------ camera
 function tunCam(t) {
   const g = gT(t);
-  const z = keys(t, [[TUN0, 0.97], [59.4, 0.94], [61.0, 1.32], [62.6, 1.38], [64.4, 1.26], [65.9, 1.08], [66.9, 0.84], [72.3, 1.0], [77, 1.0]]);
-  const sx = keys(t, [[TUN0, 900], [62.8, 880], [65.8, 900], [66.9, 930], [72.3, 830], [77, 830]]);
+  // the walk, the stop, the reach, the hurry; then a sudden pull back wide
+  // (the stream thickens) and a slow relentless push in on him while it
+  // races, the frame tilting; time stops; as the frozen go out, the camera
+  // eases back and rights itself, and leaves him in the grey
+  const z = keys(t, [[TUN0, 0.97], [59.4, 0.94], [61.0, 1.32], [62.6, 1.38], [64.4, 1.26], [65.9, 1.08], [67.0, 0.9], [67.4, 0.9], [72.6, 1.42], [73.15, 1.44], [75.9, 1.0], [77, 1.0]]);
+  const sx = keys(t, [[TUN0, 900], [62.8, 880], [65.8, 900], [67.0, 960], [73.15, 960], [75.9, 830], [77, 830]]);
   const follow = lerp(HS * g.m + M_OFF, X_END, smooth(t, 65.6, 67.2));
-  const r = 0.032 * Math.sin(Math.PI * smooth(t, 66.9, 72.3, ease.inOut));
-  const feet = keys(t, [[59.4, 800], [61.0, 772], [64.4, 772], [65.9, 790], [66.9, 800]]);
+  const r = keys(t, [[67.2, 0], [72.6, 0.05], [73.15, 0.052], [75.7, 0]]);
+  const feet = keys(t, [[59.4, 800], [61.0, 772], [64.4, 772], [65.9, 790], [67.0, 790], [67.4, 790], [72.6, 836], [73.15, 838], [75.9, 800]]);
   return { x: follow + (W / 2 - sx) / z, y: G - (feet - H / 2) / z, z, r };
 }
 // (mean progress m runs a little behind the hip; line them up at the stop)
 const M_OFF = hisX(61) - HS * gT(61).m;
+// parallax: how far the camera has travelled from where it stands while he
+// reaches (61); a lane at depth k is drawn shifted by (1 - k) * pan, so far
+// lanes slide by slower and near ones faster
+const REF_X = tunCam(61).x;
+let memo = { t: NaN, x: 0 };
+function pan(t) {
+  if (memo.t !== t) memo = { t, x: tunCam(t).x - REF_X };
+  return memo.x;
+}
+const offK = (k, t) => (1 - k) * pan(t);
+const laneOff = (lane, t) => offK(LANES[lane].k, t);
+// where a person appears, in his line's coordinates
+const ax = (c, t) => px(c, t) + laneOff(c.lane, t);
 
 // world x range visible at time t (with margin)
 function viewX(t, margin = 0) {
@@ -341,14 +368,14 @@ function buildPeople() {
   out.push({ lane: 2, dir: 1, v: 230, xf: followX, id: id++, ph: 0.1, sz: 1.0, ta: 59.25, key: 'follow' });
   // in the rush: people in the near lanes who cross right in front of him,
   // closer and closer together, their lights sweeping over him
-  [[67.35, 3, 1], [68.25, 3, -1], [68.95, 4, 1], [69.55, 3, -1], [70.1, 3, 1], [70.6, 3, -1], [71.05, 3, 1], [71.45, 3, -1]].forEach(([tc, lane, dir], i) => {
+  [[67.9, 3, 1], [68.6, 3, -1], [69.2, 4, 1], [69.7, 3, -1], [70.2, 3, 1], [70.65, 3, -1], [71.05, 3, 1], [71.45, 3, -1]].forEach(([tc, lane, dir], i) => {
     const v = (150 + 30 * hash(i * 3.3)) * (0.75 + 0.25 * LANES[lane].s);
-    const c = { lane, dir, v, xr: X_END + (hash(i * 5.1) - 0.5) * 30, tr: tau(tc), enter: true, id: id++, ph: hash(i * 7.7), sz: 0.95 + 0.1 * hash(i), tail: i % 3 === 1, sweep: true };
+    const c = { lane, dir, v, xr: X_END + (hash(i * 5.1) - 0.5) * 30 - laneOff(lane, tc), tr: tau(tc), enter: true, id: id++, ph: hash(i * 7.7), sz: 0.95 + 0.1 * hash(i), tail: i % 3 === 1, sweep: true };
     // they walk in from outside the frame
     let ta = tc;
     for (; ta > 60; ta -= 0.05) {
       const [v0, v1] = viewX(ta, 170 * LANES[lane].s);
-      const x = px(c, ta);
+      const x = ax(c, ta);
       if (x < v0 || x > v1) break;
     }
     c.ta = ta;
@@ -363,7 +390,7 @@ function buildPeople() {
     const v = (105 + 70 * r()) * (0.75 + 0.25 * LANES[lane].s);
     const ta = 58.45 + r() * 1.0;
     const [v0, v1] = viewX(ta, -80);
-    const xa = lerp(v0, v1, r());
+    const xa = lerp(v0, v1, r()) - laneOff(lane, ta);
     const c = { lane, dir, v, xr: xa, tr: tau(ta), ta, id: id++, ph: r(), sz: 0.94 + 0.12 * r(), tail: r() < 0.25 };
     if (!ok(c, out)) continue;
     out.push(c);
@@ -379,18 +406,18 @@ function buildPeople() {
     const dir = r() < 0.5 ? -1 : 1;
     const v = (115 + 75 * r()) * (0.75 + 0.25 * LANES[lane].s);
     const [v0, v1] = viewX(t, 160 * LANES[lane].s);
-    const xe = dir > 0 ? v0 : v1;
+    const xe = (dir > 0 ? v0 : v1) - laneOff(lane, t);
     const c = { lane, dir, v, xr: xe, tr: tau(t), ta: t, enter: true, id: id++, ph: r(), sz: 0.94 + 0.12 * r(), tail: r() < 0.25 };
     if (!ok(c, out)) continue;
     out.push(c);
   }
   // the order they go out in, once time has stopped: far from him first
-  const vis = out.filter((c) => {
-    const x = px(c, FROZEN);
-    const [a, b] = viewX(FROZEN, 200);
+  const vis = out.filter((c) => [FROZEN, 74, 75, 76].some((tt) => {
+    const x = ax(c, tt);
+    const [a, b] = viewX(tt, 200);
     return x > a && x < b;
-  });
-  vis.sort((a, b) => Math.abs(px(b, FROZEN) - X_END) * (0.7 + 0.6 * hash(b.id)) - Math.abs(px(a, FROZEN) - X_END) * (0.7 + 0.6 * hash(a.id)));
+  }));
+  vis.sort((a, b) => Math.abs(ax(b, FROZEN) - X_END) * (0.7 + 0.6 * hash(b.id)) - Math.abs(ax(a, FROZEN) - X_END) * (0.7 + 0.6 * hash(a.id)));
   vis.forEach((c, i) => {
     c.out = 73.3 + 1.65 * (i / Math.max(1, vis.length - 1));
   });
@@ -404,20 +431,22 @@ function ok(c, list) {
   const L = c.lane;
   if (c.sweep) return true;
   for (let t = Math.max(c.ta, 58.6); t <= 73; t += 0.1) {
-    const x = px(c, t);
+    const x = ax(c, t);
     const hx = hisX(t);
     if ((L === 3 || L === 4) && t > 60.4 && t < 66.2 && Math.abs(x - hx) < 120) return false;
     if (L === 1 && t > 60.6 && t < 62.8) {
-      const rx = px(list[0], t);
+      const rx = ax(list[0], t);
       if (Math.abs(x - rx) < 190) return false;
     }
     if ((L === 1 || L === 0) && t > 60.6 && t < 62.6 && Math.abs(x - hx) < 140) return false;
+    // in the rush only the sweepers cross in front of him
+    if ((L === 2 || L === 3) && t > 66.2 && Math.abs(x - hx) < 110) return false;
   }
-  if (Math.abs(px(c, FROZEN) - X_END) < (L >= 3 ? 170 : 100)) return false;
+  if (Math.abs(ax(c, FROZEN) - X_END) < (L >= 3 ? 170 : 100)) return false;
   // the nearest lane's lights sit low in the frame: gone before the subtitle
   if (L === 4) {
     const [a, b] = viewX(72.5, 140);
-    const x = px(c, 72.5);
+    const x = ax(c, 72.5);
     if (x > a && x < b) return false;
   }
   for (const o of list) {
@@ -429,19 +458,23 @@ function ok(c, list) {
   return true;
 }
 
-// how much a person is there: popping in with their light, going out after
-// time stops
+// how much a person is there: walking up out of the dark just before their
+// light bangs on (as night falls); going out after time stops
 function presence(c, t) {
-  const inK = c.enter ? 1 : smooth(t, c.ta, c.ta + 0.12);
-  const outK = c.out ? 1 - smooth(t, c.out, c.out + 0.45) : t > 74 ? 0 : 1;
-  return Math.min(inK, outK);
+  const inK = c.enter ? 1 : smooth(t, c.ta - 0.4, c.ta);
+  return Math.min(inK, outK(c, t));
 }
+function outK(c, t) {
+  return c.out ? 1 - smooth(t, c.out, c.out + 0.45) : t > 74 ? 0 : 1;
+}
+// their light: on in one frame
+const lightOn = (c, t) => (c.enter || t >= c.ta ? 1 : 0) * outK(c, t);
 
 function personPose(c, t) {
   const L = LANES[c.lane];
   const s = L.s * c.sz;
-  const x = px(c, t);
-  const d = Math.abs(x - c.x0);
+  const x = ax(c, t);
+  const d = Math.abs(px(c, t) - c.x0);
   const w = walk(walkPhase(d, s) + c.ph, L.g + (hash(c.id) - 0.5) * 8, s, 0.86);
   return pose({ ...w, x, s, f: c.dir, head: 0.02 + 0.04 * hash(c.id * 3), tail: c.tail ? 0.2 * Math.sin(walkPhase(d, s) * TAU * 2) : 0 });
 }
@@ -454,6 +487,7 @@ function knock(ctx, p, w, k = 1) {
 function drawPerson(ctx, c, t, frozen) {
   const k = presence(c, t);
   if (k <= 0.01) return null;
+  const lk = lightOn(c, t);
   const p = personPose(c, t);
   const L = LANES[c.lane];
   const w = Math.max(2, 4.4 * Math.pow(p.s, 0.85));
@@ -465,7 +499,7 @@ function drawPerson(ctx, c, t, frozen) {
   }
   if (c.lane >= 2) knock(ctx, p, w, k);
   figure(ctx, p, { id: c.id, w, eye: 'none', alpha: L.a * k, ponytail: c.tail, noTie: true, still: frozen });
-  return { p, k, c };
+  return { p, k: lk, c };
 }
 
 // a person's own light: a spot from straight above that walks with them
@@ -477,15 +511,31 @@ function personLight(d) {
   const lean = (hash(c.id * 7) - 0.5) * 70;
   return [
     { type: 'spot', sx: p.x + lean, sy: -520, fx: p.x, fy: g, rx: 68 * s, ry: 15 * s, k: 0.9 * k },
-    { type: 'glow', x: p.x, y: g - 135 * s, r: 112 * s, k: 0.5 * k },
   ];
+}
+// a round soft light, drawn once
+let haloC = null;
+function haloSprite() {
+  if (!haloC) {
+    haloC = document.createElement('canvas');
+    haloC.width = 128;
+    haloC.height = 128;
+    const c = haloC.getContext('2d');
+    const g = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,250,236,1)');
+    g.addColorStop(0.45, 'rgba(255,250,236,0.55)');
+    g.addColorStop(1, 'rgba(255,250,236,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 128, 128);
+  }
+  return haloC;
 }
 
 // ------------------------------------------------------------ him
 function himPose(t) {
   const g = gT(t);
   const x = hisX(t);
-  const head = keys(t, [[56, 0.36], [59.3, 0.36], [60.25, 0.02], [61.25, -0.06], [61.9, -0.14], [62.6, 0.0], [63.4, -0.05], [64.4, -0.12], [65.4, 0.1], [66.2, 0.22], [69.2, 0.16], [71.6, 0.1], [72.5, -0.04], [73.1, 0.1], [76, 0.13]]);
+  const head = keys(t, [[56, 0.36], [59.3, 0.36], [60.25, 0.02], [61.25, -0.06], [61.9, -0.14], [62.6, 0.0], [63.4, -0.05], [64.4, -0.12], [65.4, 0.1], [66.2, 0.22], [69.2, 0.16], [71.6, 0.1], [72.5, -0.04], [73.1, 0.1], [74.4, 0.2], [76, 0.2]]);
   const look = keys(t, [[56, 0.8], [59.3, 0.8], [60.25, 0.1], [61.25, -0.2], [61.9, -0.35], [62.6, 0.1], [63.4, 0], [64.4, -0.1], [65.4, 0.5], [66.2, 0.55], [71.6, 0.3], [72.5, 0.05], [73.1, 0.3]]);
   const lean = keys(t, [[56, 0.1], [59.3, 0.1], [60.3, 0.0], [61.3, 0.0], [61.85, 0.1], [62.3, 0.07], [62.9, 0.0], [64.2, 0.08], [65.5, 0.0], [66.2, 0.03], [72.4, 0.0], [73.6, 0.03]]);
   // he follows the people passing in front with his face, now and then
@@ -507,16 +557,39 @@ function himPose(t) {
     p.aA1 = lerp(p.aA1, r.a1, fr);
     p.aA2 = lerp(p.aA2, r.a2, fr);
   }
-  // time stops: a hand to his chest
+  // time stops: a hand to his chest. (In profile that forearm points into
+  // the picture, so chestArm() draws it, foreshortened; arm A hangs hidden
+  // behind arm B meanwhile.)
   const ch = smooth(t, 73.0, 73.9, ease.inOut);
   if (ch > 0) {
-    const r = reach(p, 'A', j.shoulder[0] + 9 * HS, j.shoulder[1] + 34 * HS);
-    p.aA1 = lerp(p.aA1, r.a1, ch);
-    p.aA2 = lerp(p.aA2, r.a2, ch);
+    p.aA1 = p.aB1;
+    p.aA2 = p.aB2;
   }
   const mouth = keys(t, [[56, -0.3], [60.4, -0.2], [61.5, 0.15], [62.6, -0.3], [63.5, 0.1], [64.4, 0.2], [65.4, -0.45], [66.2, -0.4], [72.5, -0.3], [73.6, 0]]);
   const eye = t > 72.85 ? 'closed' : 'dot';
-  return { p, mouth, eye };
+  return { p, mouth, eye, ch };
+}
+
+// His near arm coming up to lie on his chest (u: 0 hanging .. 1 on the
+// chest), drawn after figure(); p is the pose figure() was given (with
+// aA = aB). s05 can use it to pick up where s04 leaves him.
+export function chestArm(ctx, p, u, o = {}) {
+  if (u <= 0) return;
+  const j = joints(p);
+  const s = p.s;
+  const f = p.f ?? 1;
+  const R = j.armRoot;
+  const E1 = [R[0] - f * 3 * s, R[1] + 42 * s];
+  const H1 = [R[0] + f * 13 * s, R[1] + 10 * s];
+  const k = ease.inOut(clamp(u));
+  const bulge = Math.sin(Math.PI * k) * 12 * s;
+  const E = [lerp(j.elbowA[0], E1[0], k) + f * bulge * 0.5, lerp(j.elbowA[1], E1[1], k)];
+  const Hd = [lerp(j.handA[0], H1[0], k) + f * bulge, lerp(j.handA[1], H1[1], k)];
+  const w = o.w ?? Math.max(2, 4.6 * Math.pow(s, 0.85));
+  path(ctx, [R, E, Hd], { w, seed: 46, wobble: 0.8, alpha: o.alpha });
+  // the hand flat on the chest
+  const pk = smooth(k, 0.7, 1);
+  if (pk > 0) path(ctx, [Hd, [Hd[0] - f * 4 * s * pk, Hd[1] - 9 * s * pk]], { w: w * 0.9, seed: 47, wobble: 0.3, alpha: o.alpha });
 }
 
 // ------------------------------------------------------------ time lapse
@@ -584,6 +657,12 @@ const SEASON = { leaf0: 57.42, leaf1: 57.82, fall: 57.92, winter: 58.28, spring:
 function drawTree(ctx, t) {
   const a = 1 - smooth(t, SEASON.out0, SEASON.out1);
   if (a <= 0.01) return;
+  ctx.save();
+  ctx.translate(offK(0.6, t), 0);
+  drawTree0(ctx, t, a);
+  ctx.restore();
+}
+function drawTree0(ctx, t, a) {
   path(ctx, TRUNK, { w: 7, alpha: a, seed: 1500 });
   BRANCHES.forEach((b, i) => path(ctx, b, { w: i < 3 ? 4.6 : 3, alpha: a, seed: 1510 + i }));
   // leaves grow, then go
@@ -669,28 +748,39 @@ function snowfall(ctx, t, cam) {
   ctx.restore();
 }
 
-// the ground: far ridge, horizon, and faint pencil lines across the floor
-// (the lights pick them out)
+// the ground: the horizon with poles far off, his line, and faint pencil
+// lines across the floor (the lights pick them out); each row slides past
+// at its own depth
+const ROWS = [[600, 0.3], [640, 0.55], [690, 0.75], [726, 0.88], [G + 2, 1], [800, 1.09], [870, 1.25]];
 function ground(ctx, t, x0, x1, a) {
   if (a <= 0.01) return;
-  const t0 = Math.floor(x0 / 400);
-  const t1 = Math.ceil(x1 / 400);
-  for (let i = t0; i < t1; i++) {
-    const xa = i * 400;
-    const xb = xa + 400;
-    const sd = 8300 + (i & 255) * 8;
-    path(ctx, [[xa - 2, 600], [xb + 2, 600]], { w: 1.8, color: COL.inkSoft, alpha: a, seed: sd, wobble: 0.5 });
-    path(ctx, [[xa - 2, G + 2], [xb + 2, G + 2]], { w: 3, alpha: a * 0.8, seed: sd + 1, wobble: 0.6 });
-    for (const [y, q] of [[640, 0.5], [690, 0.6], [726, 0.6], [800, 0.7], [870, 0.7]]) {
-      const dx = (hash(i * 3.1 + y) - 0.5) * 160;
-      path(ctx, [[xa + 60 + dx, y], [xa + 260 + dx, y + 1]], { w: 1.6, color: COL.pencil, alpha: a * q, seed: sd + 2 + (y % 7), wobble: 0.4 });
+  for (const [y, k] of ROWS) {
+    const off = offK(k, t);
+    const i0 = Math.floor((x0 - off) / 400);
+    const i1 = Math.ceil((x1 - off) / 400);
+    ctx.save();
+    ctx.translate(off, 0);
+    for (let i = i0; i < i1; i++) {
+      const xa = i * 400;
+      const xb = xa + 400;
+      const sd = 8300 + (i & 255) * 8;
+      if (y === 600) {
+        path(ctx, [[xa - 2, 600], [xb + 2, 600]], { w: 1.8, color: COL.inkSoft, alpha: a, seed: sd, wobble: 0.5 });
+        // a pole far off, now and then
+        if ((i & 1) === 0) {
+          const ppx = xa + 120 + hash(i * 5.3) * 160;
+          path(ctx, [[ppx, 602], [ppx, 532]], { w: 2, color: COL.inkSoft, alpha: a, seed: sd + 5, wobble: 0.3 });
+          path(ctx, [[ppx - 12, 540], [ppx + 12, 540]], { w: 1.6, color: COL.inkSoft, alpha: a, seed: sd + 6, wobble: 0.3 });
+        }
+      } else if (y === G + 2) {
+        path(ctx, [[xa - 2, y], [xb + 2, y]], { w: 3, alpha: a * 0.8, seed: sd + 1, wobble: 0.6 });
+      } else {
+        const q = y < 700 ? 0.5 : y < 760 ? 0.6 : 0.7;
+        const dx = (hash(i * 3.1 + y) - 0.5) * 160;
+        path(ctx, [[xa + 60 + dx, y], [xa + 260 + dx, y + 1]], { w: 1.6, color: COL.pencil, alpha: a * q, seed: sd + 2 + (y % 7), wobble: 0.4 });
+      }
     }
-    // a pole far off, now and then
-    if ((i & 1) === 0) {
-      const ppx = xa + 120 + hash(i * 5.3) * 160;
-      path(ctx, [[ppx, 602], [ppx, 532]], { w: 2, color: COL.inkSoft, alpha: a, seed: sd + 5, wobble: 0.3 });
-      path(ctx, [[ppx - 12, 540], [ppx + 12, 540]], { w: 1.6, color: COL.inkSoft, alpha: a, seed: sd + 6, wobble: 0.3 });
-    }
+    ctx.restore();
   }
 }
 
@@ -754,7 +844,6 @@ function tunnelShot(ctx, t) {
   const [vx0, vx1] = viewX(t, 0);
   skyInk(ctx, t);
   const drawn = [];
-  let himJ = null;
   camera(ctx, cam, () => {
     // the world fades to nowhere at the end
     const worldA = 1 - smooth(t, 73.4, 75.6);
@@ -766,25 +855,24 @@ function tunnelShot(ctx, t) {
     // him, then the one he follows (a step in front), then the near lanes
     const h = himPose(t);
     knock(ctx, h.p, 4.6, 1);
-    himJ = figure(ctx, h.p, { id: 1, cowlick: true, mouth: h.mouth, eye: h.eye });
+    figure(ctx, h.p, { id: 1, cowlick: true, mouth: h.mouth, eye: h.eye });
+    chestArm(ctx, h.p, h.ch);
     for (const lane of [2, 3, 4]) for (const c of PEOPLE) if (c.lane === lane) pushDrawn(ctx, c, t, frozen, vx0, vx1, drawn);
 
     const lights = drawn.flatMap(personLight);
     const dark = keys(t, [[56, 0.81], [73.5, 0.81], [75.6, 0.47]]) * lerp(1, 0.2, day);
-    stage(ctx, lights, { dark, beams: 0.55 });
+    stage(ctx, lights, { dark, beams: 0 });
   });
-  // the lit people shine a little
+  // the lit people shine: a soft halo round each (one sprite, scaled)
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'lighter';
+  const halo = haloSprite();
   for (const d of drawn) {
     const [sx, sy] = toScreen(cam, d.p.x, d.p.y - 40 * d.p.s);
-    const r = 135 * d.p.s * cam.z;
-    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-    g.addColorStop(0, `rgba(255,250,236,${0.13 * d.k})`);
-    g.addColorStop(1, 'rgba(255,250,236,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(sx - r, sy - r, 2 * r, 2 * r);
+    const r = 150 * d.p.s * cam.z;
+    ctx.globalAlpha = 0.2 * d.k;
+    ctx.drawImage(halo, sx - r, sy - r, 2 * r, 2 * r);
   }
   ctx.restore();
   skyLight(ctx, t, t < 60 ? 1 - daylight(t) : 1);
@@ -803,11 +891,11 @@ function tunnelShot(ctx, t) {
   ctx.globalCompositeOperation = 'lighter';
   for (const d of drawn) {
     if (d.c.enter || t < d.c.ta || t > d.c.ta + 0.3) continue;
-    const f = Math.exp(-(t - d.c.ta) / 0.07);
-    const [sx, sy] = toScreen(cam, d.p.x, LANES[d.c.lane].g - 120 * d.p.s);
-    const r = 300 * d.p.s;
+    const f = Math.exp(-(t - d.c.ta) / 0.06);
+    const [sx, sy] = toScreen(cam, d.p.x, LANES[d.c.lane].g - 110 * d.p.s);
+    const r = 230 * d.p.s * cam.z;
     const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-    g.addColorStop(0, `rgba(255,250,236,${0.28 * f})`);
+    g.addColorStop(0, `rgba(255,250,236,${0.34 * f})`);
     g.addColorStop(1, 'rgba(255,250,236,0)');
     ctx.fillStyle = g;
     ctx.fillRect(sx - r, sy - r, 2 * r, 2 * r);
@@ -825,8 +913,8 @@ function tunnelShot(ctx, t) {
 }
 
 function pushDrawn(ctx, c, t, frozen, vx0, vx1, drawn) {
-  if (t < c.ta) return;
-  const x = px(c, t);
+  if (t < c.ta - (c.enter ? 0 : 0.4)) return;
+  const x = ax(c, t);
   const m = 260 * LANES[c.lane].s;
   if (x < vx0 - m || x > vx1 + m) return;
   const d = drawPerson(ctx, c, t, frozen);
@@ -846,9 +934,9 @@ export default {
 // How this scene leaves him (s05 opens on it): alone in a soft grey made by
 // stage(ctx, [], { dark: 0.47 }) over plain paper (no ground line, no
 // lights), side view facing right, scale 1, feet at y 800, hip at x 830,
-// eyes closed, mouth 0, his near hand (arm A) on his chest.
-// S04_END.pose() gives the exact screen-space pose for figure(ctx, pose,
-// { id: 1, cowlick: true, eye: 'closed', mouth: 0 }).
+// eyes closed, mouth 0, his near hand on his chest. S04_END.draw(ctx) draws
+// him exactly so (screen space); S04_END.pose() is the pose (its arm A hangs
+// behind arm B: the chest arm is drawn by chestArm(ctx, pose, 1)).
 export const S04_END = {
   x: 830,
   feet: 800,
@@ -864,5 +952,10 @@ export const S04_END = {
     p.y = p.y * c.z + dy;
     p.s *= c.z;
     return p;
+  },
+  draw(ctx, o = {}) {
+    const p = this.pose();
+    figure(ctx, p, { id: 1, cowlick: true, eye: 'closed', mouth: 0, ...o });
+    chestArm(ctx, p, 1, o);
   },
 };

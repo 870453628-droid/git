@@ -185,9 +185,9 @@ function lidAt(open) {
 }
 
 // ------------------------------------------------------------- light
-// The screen as a light: a beam fanning out from the lid toward him, in
-// bands that fade with distance; it skims the table top and does not get
-// under it. L: strength (also sets the reach).
+// The screen as a light: a beam fanning out from the lid toward him, fading
+// with distance; it skims the table top and does not get under it. L:
+// strength (also sets the reach).
 function screenBeam(lp, L, lights) {
   const h = lp.hinge;
   const e = lp.lidEnd;
@@ -205,10 +205,6 @@ function screenBeam(lp, L, lights) {
   const a0 = Math.atan2(ny, nx);
   const range = 170 + 560 * clamp(L, 0, 1.3);
   const k = clamp(L * 1.08);
-  // many thin bands so the falloff reads smooth
-  const N = 28;
-  const angs = [];
-  for (let i = 0; i <= 8; i++) angs.push(a0 - 0.56 + (0.9 * i) / 8); // down .. up
   const P = (a, d) => {
     const x = ax + Math.cos(a) * d;
     let y = ay + Math.sin(a) * d;
@@ -216,14 +212,71 @@ function screenBeam(lp, L, lights) {
     if (y > R.floor + 30) y = R.floor + 30;
     return [x, y];
   };
-  for (let i = 0; i < N; i++) {
-    const d0 = back + (range * i) / N;
-    const d1 = back + (range * (i + 1)) / N;
-    const pts = [...angs.map((a) => P(a, d0)), ...angs.slice().reverse().map((a) => P(a, d1))];
-    const f = (i + 0.5) / N;
-    lights.push({ type: 'poly', pts, k: k * Math.pow(1 - f, 1.5) });
-  }
+  // the fan (down .. up), smooth falloff with distance: one radial gradient
+  // clipped to it (see stageFan)
+  const pts = [];
+  const n = 24;
+  for (let i = 0; i <= n; i++) pts.push(P(a0 - 0.56 + (0.9 * i) / n, back + range));
+  for (let i = 4; i >= 0; i--) pts.push(P(a0 - 0.56 + (0.9 * i) / 4, back));
+  lights.push({ type: 'fan', x: ax, y: ay, r0: back, r1: back + range, pts, k });
   lights.push({ type: 'glow', x: c[0] - 10, y: c[1], r: 80 + 90 * L, k: clamp(0.6 * L) });
+}
+
+// stage() (light.js) with one more kind of light: 'fan' — a radial falloff
+// from (x, y), k at r0 fading as (1-f)^1.5 to 0 at r1, clipped to pts. (The
+// fan drawn as flat bands showed steps.)
+let shadeC = null;
+function stageFan(ctx, lights, o = {}) {
+  if (!shadeC) {
+    shadeC = document.createElement('canvas');
+    shadeC.width = W;
+    shadeC.height = H;
+  }
+  const s = shadeC.getContext('2d');
+  const m = ctx.getTransform();
+  s.setTransform(1, 0, 0, 1, 0, 0);
+  s.globalCompositeOperation = 'source-over';
+  s.globalAlpha = 1;
+  s.clearRect(0, 0, W, H);
+  s.fillStyle = `rgba(14,13,12,${o.dark ?? 0.66})`;
+  s.fillRect(0, 0, W, H);
+  s.setTransform(m);
+  s.globalCompositeOperation = 'destination-out';
+  for (const Lt of lights) {
+    const k = Lt.k ?? 1;
+    if (k <= 0.001) continue;
+    if (Lt.type === 'glow') {
+      const g = s.createRadialGradient(Lt.x, Lt.y, 0, Lt.x, Lt.y, Lt.r);
+      g.addColorStop(0, `rgba(0,0,0,${k})`);
+      g.addColorStop(0.5, `rgba(0,0,0,${0.7 * k})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      s.fillStyle = g;
+      s.fillRect(Lt.x - Lt.r, Lt.y - Lt.r, Lt.r * 2, Lt.r * 2);
+    } else if (Lt.type === 'poly' || Lt.type === 'fan') {
+      s.beginPath();
+      s.moveTo(Lt.pts[0][0], Lt.pts[0][1]);
+      for (let i = 1; i < Lt.pts.length; i++) s.lineTo(Lt.pts[i][0], Lt.pts[i][1]);
+      s.closePath();
+      if (Lt.type === 'poly') {
+        s.fillStyle = `rgba(0,0,0,${k})`;
+        s.fill();
+      } else {
+        const g = s.createRadialGradient(Lt.x, Lt.y, 0, Lt.x, Lt.y, Lt.r1);
+        const u0 = Lt.r0 / Lt.r1;
+        g.addColorStop(0, `rgba(0,0,0,${k})`);
+        for (let i = 0; i <= 8; i++) {
+          const f = i / 8;
+          g.addColorStop(u0 + (1 - u0) * f, `rgba(0,0,0,${k * Math.pow(1 - f, 1.5)})`);
+        }
+        s.fillStyle = g;
+        s.fill();
+      }
+    }
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(shadeC, 0, 0);
+  ctx.restore();
 }
 // faint moonlight through the window, so the room is there
 function moonLights(lights, k = 1) {
@@ -272,8 +325,8 @@ function roomShot(ctx, t, cam, o = {}) {
     screenBeam(lp, L, lights);
     moonLights(lights);
     // the ball catches the light as it flies
-    if (ball) lights.push({ type: 'glow', x: ball[0], y: ball[1], r: 60, k: 0.35 });
-    stage(ctx, lights, { dark: 0.9, beams: 0 });
+    if (ball) lights.push({ type: 'glow', x: ball[0], y: ball[1], r: 44, k: 0.2 });
+    stageFan(ctx, lights, { dark: 0.9 });
   });
   // the lit face of the screen, and the number in the dark
   const s0 = toScreen(cam, lp.hinge[0] - 3 * S, lp.hinge[1] - 4);

@@ -328,7 +328,7 @@ function stageLights(t) {
   const own = ownLight(t);
   if (own.k > 0.002) {
     out.push({ ...own, id: 'own', white: 0, k: own.k * own.beam });
-    if (own.beam < 1) out.push({ type: 'pool', x: own.fx, y: own.fy, rx: own.rx * 1.1, ry: own.ry * 1.3, k: own.k * (1 - own.beam) * 1.1, id: 'ownPool' });
+    if (own.beam < 1) out.push({ type: 'pool', x: own.fx, y: own.fy, rx: own.rx * 1.1, ry: own.ry * 1.3, k: Math.min(1, own.k * (1 - own.beam) * 1.5), id: 'ownPool' });
   }
   for (const id in LIGHTS) {
     const L = LIGHTS[id];
@@ -346,8 +346,9 @@ const CAM_KF = [
   [3.85, { x: 1050, y: 548, C: 790 }, ease.sine],
   [4.85, { x: 1080, y: 520, C: 430 }, ease.inOut],
   [5.12, { x: 1078, y: 520, C: 425 }],
-  [5.5, { x: 600, y: 475, C: 640 }, whipE],
-  [6.62, { x: 612, y: 480, C: 590 }, ease.sine],
+  // the big light, blazing and empty (he is just out of frame on the right)
+  [5.5, { x: 572, y: 476, C: 620 }, whipE],
+  [6.62, { x: 588, y: 482, C: 548 }, ease.sine],
   [6.95, { x: 1110, y: 520, C: 440 }, whipE],
   [7.75, { x: 1118, y: 528, C: 392 }, ease.sine],
   [9.1, { x: 890, y: 545, C: 990 }, ease.inOut],
@@ -483,10 +484,24 @@ function addPoly(P, pts) {
   for (let i = 1; i < n; i++) P.lineTo(at(i)[0], at(i)[1]);
   P.closePath();
 }
+// a seat back with a softly rounded top (the top edge bows up a little)
+const SEAT_TOP = (() => {
+  const pts = [];
+  for (let i = 0; i <= 8; i++) {
+    const u = i / 8;
+    const a = Math.PI * (1 - u);
+    pts.push([Math.cos(a), 0.5 - 0.5 * Math.pow(Math.sin(a), 0.35)]);
+  }
+  return pts;
+})();
+function seatTopPts(x, top, s) {
+  const w = 33 * s;
+  return SEAT_TOP.map(([u, v]) => [x + u * w, top + 2 * s + v * 12 * s]);
+}
 function addSeat(P, x, y, s) {
-  const w = 34 * s;
+  const w = 33 * s;
   const top = y + 38 * s;
-  addPoly(P, [[x - w, top + 6 * s], [x - w + 6 * s, top], [x + w - 6 * s, top], [x + w, top + 6 * s], [x + w, top + 60 * s], [x - w, top + 60 * s]]);
+  addPoly(P, [...seatTopPts(x, top, s), [x + w, top + 60 * s], [x - w, top + 60 * s]]);
 }
 function addPerson(P, x, y, s, h, tilt, rimList, rim) {
   const r = (19 + h * 4) * s;
@@ -555,9 +570,8 @@ function hall(ctx, cam, t, o = {}) {
       if (off && (u < 0 || u > 3.4 || Math.abs(x - W / 2) > W * 1.2 + pad)) continue;
       addSeat(seatsP, x, yHead, s);
       if (o.seatRim) {
-        const w = 34 * s;
         const top = yHead + 38 * s;
-        rimList.push({ pts: [[x - w, top + 7 * s], [x - w + 6 * s, top], [x + w - 6 * s, top], [x + w, top + 7 * s]], w: Math.max(1, 1.4 * Math.min(s, 2)), a: o.seatRim * 0.55 * clamp(1.5 - 0.22 * s, 0.35, 1) });
+        rimList.push({ pts: seatTopPts(x, top, s).slice(1, -1), w: Math.max(1, 1.2 * Math.min(s, 2)), a: o.seatRim * 0.5 * clamp(1.5 - 0.22 * s, 0.3, 1) });
       }
       if (u < 0) {
         const tilt = (seat.h - 0.5) * 0.12 + noise1(t * 0.25 + seat.h * 9, seat.id) * 0.03;
@@ -870,6 +884,8 @@ function drawTheatre(ctx, t, cam, o = {}) {
   if (o.extra) all.push(...o.extra);
   stageFast(ctx, all, { dark: o.dark ?? 0.88, beams: 1 });
   for (const L of lights) if (L.white && L.type === 'spot') whiten(ctx, L, L.k * L.white);
+  // the big light blazes: a soft bloom round its pool
+  for (const L of lights) if (L.white >= 1 && L.type === 'spot') drawSprite(ctx, flashSprite(), L.fx, L.fy - L.rx * 0.4, L.rx * 3.4, 0.2 * L.k, 'lighter');
   rimsHere(ctx, rimList, (o.rimK ?? clamp(0.3 + 0.5 * glare, 0, 1)) * (o.rimMul ?? 1));
   for (const L of lights) {
     if (L.k < 0.2 || L.type !== 'spot') continue;
@@ -937,32 +953,74 @@ function drawTop(ctx, t) {
   lostEnd(q, t);
   q.y = oy - footDrop(q, s) * 0.92;
   figure(ctx, q, { id: 1, cowlick: true, mouth: -0.3 });
-  // the lights: a shaft standing on each pool
+  // the lights: a pool on the floor and a shaft of hazy light rising from it
+  // toward the camera and out of the top of the frame, fanning out from the
+  // nadir (straight down, far below the frame)
   const lights = [];
+  const shafts = [];
+  const NY = oy + 2400;
+  const TOPY = -700;
   const spot = (X, Y, r, k, own) => {
     const [px, py] = toS(X, Y);
     const rx = r * cam.z;
-    // a shaft standing in front of him would cross him: it fades, its pool stays
+    // keep the glare out from behind the subtitle (until 34.8)
+    if (!own) k *= 1 - 0.85 * smooth(py + rx * cam.e, 820, 930) * (1 - smooth(t, 18.75, 18.95));
+    const sx = ox + ((px - ox) * (NY - TOPY)) / (NY - py);
+    // a shaft rising in front of him would cross him: it thins out there
     const clear = own || py < oy ? 1 : clamp((Math.abs(px - ox) - rx * 0.3) / (rx * 1.2 + 40));
-    const L = { type: 'spot', sx: px, sy: py - 1500 * cam.z, fx: px, fy: py, rx, ry: rx * cam.e, k: k * clear };
-    if (clear < 1) L.pool = { type: 'pool', x: px, y: py, rx, ry: rx * cam.e, k: k * (1 - clear) };
-    return L;
+    lights.push({ type: 'pool', x: px, y: py, rx: rx * 1.05, ry: rx * cam.e * 1.05, k });
+    const L = { type: 'spot', sx, sy: TOPY, fx: px, fy: py, rx, ry: rx * cam.e, k: k * clear };
+    lights.push({ ...L, k: L.k * 0.28 });
+    shafts.push([L, own ? 0.5 : 1]);
   };
-  const kHim = 0.7 - 0.2 * smooth(t, 19.4, 20.3);
-  lights.push(spot(hx, hy, 105, kHim, true));
+  spot(hx, hy, 105, 0.7 - 0.2 * smooth(t, 19.4, 20.3), true);
   lights.push({ type: 'glow', x: ox, y: oy - 120 * s, r: 260 * s, k: 0.35 });
   lights.push({ type: 'glow', x: ox, y: oy, r: 900 * cam.z, k: 0.2 });
-  const shafts = [];
   for (const [bx, by, r, on, off] of BLINKS) {
     const k = blinkK(t, on, off);
-    if (k <= 0.01) continue;
-    const L = spot(bx, by, r, 0.95 * k);
-    lights.push(L);
-    if (L.pool) lights.push(L.pool);
-    shafts.push(L);
+    if (k > 0.01) spot(bx, by, r, 0.95 * k);
   }
-  stageFast(ctx, lights, { dark: 0.93, beams: 1 });
-  for (const L of shafts) whiten(ctx, L, L.k * 0.8);
+  stageFast(ctx, lights, { dark: 0.93, beams: 0 });
+  for (const [L, w] of shafts) shaftHaze(ctx, L, L.k * w);
+}
+
+// a shaft of light in the haze seen from above (additive): brightest at the
+// pool, fading out toward the camera
+function shaftHaze(ctx, L, k) {
+  if (k <= 0.01) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(L.fx, L.fy, L.sx, L.sy);
+  g.addColorStop(0, `rgba(255,251,240,${0.2 * k})`);
+  g.addColorStop(0.3, `rgba(255,251,240,${0.09 * k})`);
+  g.addColorStop(1, 'rgba(255,251,240,0)');
+  ctx.fillStyle = g;
+  const dx = L.sx - L.fx;
+  const dy = L.sy - L.fy;
+  const n = Math.hypot(dx, dy);
+  const nx = -dy / n;
+  const ny = dx / n;
+  const w0 = L.rx * 0.96;
+  const w1 = L.rx * 0.45;
+  ctx.beginPath();
+  ctx.moveTo(L.fx - nx * w0, L.fy - ny * w0);
+  ctx.lineTo(L.sx - nx * w1, L.sy - ny * w1);
+  ctx.lineTo(L.sx + nx * w1, L.sy + ny * w1);
+  ctx.lineTo(L.fx + nx * w0, L.fy + ny * w0);
+  ctx.closePath();
+  ctx.fill();
+  // the pool glares, with a halo
+  ctx.translate(L.fx, L.fy);
+  ctx.scale(1, L.ry / L.rx);
+  const p = ctx.createRadialGradient(0, 0, 0, 0, 0, L.rx * 1.6);
+  p.addColorStop(0, `rgba(255,252,242,${0.32 * k})`);
+  p.addColorStop(0.55, `rgba(255,252,242,${0.16 * k})`);
+  p.addColorStop(1, 'rgba(255,252,242,0)');
+  ctx.fillStyle = p;
+  ctx.beginPath();
+  ctx.arc(0, 0, L.rx * 1.6, 0, TAU);
+  ctx.fill();
+  ctx.restore();
 }
 
 // the end of the spin: arms drop, head goes down
@@ -1077,7 +1135,7 @@ function render(ctx, t) {
       // the hall: house lights low, his last dim light, the last people go
       const end = smooth(t, 23.3, 23.95);
       const hallLights = [{ id: 'own', sx: P_LOST[0] - 40, sy: -420, fx: P_LOST[0], fy: P_LOST[1], rx: 40, ry: 9, k: 0.85 * (1 - end), white: 0 }];
-      const house = [{ type: 'glow', x: W / 2, y: H * 0.78, r: 1250, k: 0.2 * (1 - end) }];
+      const house = [{ type: 'glow', x: W / 2, y: H * 0.78, r: 1250, k: 0.26 * (1 - end) }];
       drawTheatre(ctx, t, cam, { lights: hallLights, wash: 0.3 * (1 - end), haze: 0.55 * (1 - end), sconces: 1.2 * (1 - end), seatRim: 0.8 * (1 - end), rimK: 0.9 * (1 - end), dark: 0.88, extra: house });
     }
     flashes(ctx, t, cam, false);
@@ -1100,7 +1158,7 @@ function camVel(t) {
   return {
     vx: whip ? (-(b.cam.x - a.cam.x) * s) / (2 * dt) : 0,
     vy: whip ? (-(b.cam.y - a.cam.y) * s) / (2 * dt) : 0,
-    w: t > SPIN[0] - 0.5 ? ((b.cam.r ?? 0) - (a.cam.r ?? 0)) / (2 * dt) : 0,
+    w: t >= SPIN[0] ? ((b.cam.r ?? 0) - (a.cam.r ?? 0)) / (2 * dt) : 0,
   };
 }
 
@@ -1114,30 +1172,37 @@ function canvasBuf() {
   c.height = H;
   return c;
 }
-function smearPass(dst, src, dx, dy, da, last) {
-  const g = dst.getContext ? dst.getContext('2d') : dst;
+function smearPass(g, src, w, h, dx, dy, da) {
   g.save();
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalCompositeOperation = 'source-over';
-  if (!last) {
-    g.globalAlpha = 1;
-    g.fillStyle = '#1d1b19';
-    g.fillRect(0, 0, W, H);
-  }
+  g.globalAlpha = 1;
+  g.fillStyle = '#1d1b19';
+  g.fillRect(0, 0, w, h);
   g.imageSmoothingEnabled = !!da;
   for (const [sgn, alpha] of [[-1, 1], [1, 0.5]]) {
     g.globalAlpha = alpha;
     g.setTransform(1, 0, 0, 1, 0, 0);
-    g.translate(W / 2 + Math.round((sgn * dx) / 2), H / 2 + Math.round((sgn * dy) / 2));
+    g.translate(w / 2 + Math.round((sgn * dx) / 2), h / 2 + Math.round((sgn * dy) / 2));
     if (da) {
       g.rotate((sgn * da) / 2);
       const zc = 1 + Math.abs(da) * 0.6;
       g.scale(zc, zc);
     }
-    g.translate(-W / 2, -H / 2);
-    g.drawImage(src, 0, 0);
+    g.translate(-w / 2, -h / 2);
+    g.drawImage(src, 0, 0, w, h);
   }
   g.restore();
+}
+
+// half-resolution buffers for the spin (it blurs the frame anyway)
+let HB1 = null;
+let HB2 = null;
+function halfBuf() {
+  const c = document.createElement('canvas');
+  c.width = W / 2;
+  c.height = H / 2;
+  return c;
 }
 
 export default {
@@ -1148,9 +1213,12 @@ export default {
     // shutter: one frame at 30 fps
     const sh = 1 / 30;
     const L = v ? Math.hypot(v.vx, v.vy) * sh : 0;
-    const A = v ? Math.abs(v.w) * sh * 700 : 0;
+    // the spin (and only the spin: the gentler roll of the chase stays
+    // sharp) smears the turning frame
+    const spinning = !!v && t >= SPIN[0];
+    const A = spinning ? Math.abs(v.w) * sh * 700 : 0;
     const span = Math.max(L, A);
-    if (span < 12) {
+    if (span < 12 && !spinning) {
       render(ctx, t);
       return;
     }
@@ -1164,26 +1232,49 @@ export default {
     b.fillRect(0, 0, W, H);
     render(b, t);
     // passes: copies spaced about 4 px apart, at most 32 of them
-    const passes = Math.max(2, Math.min(5, Math.ceil(Math.log2(span / 4))));
+    const passes = Math.max(2, Math.min(5, Math.ceil(Math.log2(Math.max(8, span) / 4))));
+    // the spin turns the whole frame: smear it at half resolution (it eases
+    // in over the first moments, from the sharp picture)
+    const half = spinning;
+    const sc = half ? 0.5 : 1;
+    const w = W * sc;
+    const h = H * sc;
     let src = BUF;
     let dst = BUF2;
-    let dx = v.vx * sh;
-    let dy = v.vy * sh;
+    if (half) {
+      if (!HB1) HB1 = halfBuf();
+      if (!HB2) HB2 = halfBuf();
+      const g = HB1.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'copy';
+      g.imageSmoothingEnabled = true;
+      g.drawImage(BUF, 0, 0, w, h);
+      g.globalCompositeOperation = 'source-over';
+      src = HB1;
+      dst = HB2;
+    }
+    let dx = v.vx * sh * sc;
+    let dy = v.vy * sh * sc;
     let da = v.w * sh;
     for (let i = 0; i < passes; i++) {
       dx /= 2;
       dy /= 2;
       da /= 2;
-      const last = i === passes - 1;
-      if (last) {
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = '#1d1b19';
-        ctx.fillRect(0, 0, W, H);
-        ctx.restore();
-      }
-      smearPass(last ? ctx : dst, src, dx, dy, da, last);
+      const last = i === passes - 1 && !half;
+      smearPass(last ? ctx : dst.getContext('2d'), src, w, h, dx, dy, da);
       [src, dst] = [dst, src];
+    }
+    if (half) {
+      const k = smooth(t, SPIN[0], SPIN[0] + 0.4);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      if (k < 1) ctx.drawImage(BUF, 0, 0);
+      ctx.globalAlpha = k;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(src, 0, 0, W, H);
+      ctx.restore();
     }
   },
 };
