@@ -9,8 +9,8 @@ export const SCENES = [
   { id: 's01', start: 0.0, end: 16.0 }, // the theatre: bang, the boy in the spotlight, the audience; title
   { id: 's02', start: 16.0, end: 40.0 }, // he grows, his light shrinks; brighter lights; he chases, gets lost
   { id: 's03', start: 40.0, end: 54.0 }, // the screen's light; post after post; it fades; he shuts the lid
-  { id: 's04', start: 54.0, end: 72.0 }, // the time tunnel: people with brighter lights stream past him
-  { id: 's05', start: 72.0, end: 92.0 }, // he stops chasing; his own work; a brighter light passes, he goes on
+  { id: 's04', start: 54.0, end: 76.0 }, // the time tunnel: people with brighter lights stream past him; time stops
+  { id: 's05', start: 76.0, end: 92.0 }, // he turns away; his own work; a brighter light passes, he goes on
   { id: 's06', start: 92.0, end: 108.0 }, // a light lands on him; joy, doubt; it comes and goes, he keeps working
   { id: 's07', start: 108.0, end: DURATION }, // back on the empty stage; daylight; the spotlight behind him; he walks on
 ];

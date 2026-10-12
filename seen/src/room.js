@@ -18,6 +18,10 @@ export const ROOM = {
   pileX: 760, // the paper-ball pile, on the floor behind the stool
 };
 
+// The light that lands on him at the table (s06, s07): a spot from above,
+// in room coordinates.
+export const ROOM_SPOT = { sx: ROOM.stoolX + 70, sy: -320, fx: ROOM.stoolX + 30, fy: ROOM.floor, rx: 150, ry: 26 };
+
 // Draw the room. o:
 //   open   0..1 laptop lid (default 1)
 //   door   0..1 how far the door is open (default 0)
