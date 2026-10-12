@@ -1,160 +1,178 @@
-// s01 · 0–9 · 小时候，所有人都看着我。/ 我以为，那就是特别。
-// A dark stage. One spotlight snaps on; its pool exactly fits a small boy.
-// Around him in the dark, grown-ups clap. He smiles, puffs his chest, rises
-// on his toes.
+// s01 · 0–16 · the theatre
+// Black. BANG — a spotlight slams down on a small stick-figure child in the
+// middle of a stage; he throws up an arm against the glare. Close: he lowers
+// it, looks up into the light, smiles. Then one long, slow pull-back: out
+// past the drapes and the footlights and over row after row of people — all
+// watching him, quietly — until we sit in the last row with them, the boy a
+// small bright point far away. 我喜欢被看见: back on stage, arms open, face
+// up, he basks. The light closes to a point and goes out; the title.
 //
-// The stage set is exported (READ-ONLY for other scenes): s02 starts on
-// exactly the frame this scene ends on.
-import { W, TAU, lerp, prog, smooth, keys, ease, camera, path } from '../lib.js';
-import { figure, pose, standY, LEG } from '../figure.js';
+// Exports the stage set-up for s02 and s07 (READ-ONLY for them).
+import { W, H, clamp, lerp, smooth, keys, ease, noise1, camera, text, path } from '../lib.js';
+import { figure, pose, standY } from '../figure.js';
 import { stage } from '../light.js';
+import { TH, stageCam, project, stagePlane, auditorium, sconces, rims, dust, hallDark, haze } from '../theatre.js';
 
-export const STAGE = {
-  floor: 770,
-  cx: 960,
-  boyS: 0.6,
-  pool: { rx: 64, ry: 15 },
-  src: [960, -80],
-  dark: 0.85,
-  // where s01's camera ends (s02 starts here)
-  cam: { x: 960, y: 650, z: 1.62 },
-};
+const BANG = 1.4;
+// the spot hangs high in front of the stage; its pool just fits the child
+export const SPOT = { sx: TH.cx, sy: -420, fx: TH.cx, fy: TH.floor, rx: 64, ry: 14 };
 
-// The onlookers: two rows on each side of the stage, all facing the middle.
-export const AUDIENCE = (() => {
-  const out = [];
-  const rows = [
-    { g: 728, s: 0.8, xs: [520, 645, 775, 1145, 1275, 1400] },
-    { g: 800, s: 0.95, xs: [380, 575, 1345, 1540] },
-  ];
-  let i = 0;
-  for (const r of rows) {
-    for (const x of r.xs) {
-      out.push({ x, g: r.g, s: r.s * (0.95 + 0.1 * ((i * 37) % 7) / 7), side: x < 960 ? -1 : 1, i, start: 1.4 + ((i * 5) % 12) * 0.1 });
-      i++;
-    }
-  }
-  return out;
-})();
-
-// One front-view onlooker on this stage (s02 uses it too). Like
-// props.onlooker(), but the clap brings the hands together at the midline
-// (they don't cross), and the body can lean toward what they watch.
-//   o: k (0..1 clapping), ph, turn, head, lean, id, alpha, back
-export function person(ctx, x, ground, s, t, o = {}) {
-  const k = o.k ?? 0;
-  const p = pose({ x, y: ground - LEG * s, s, view: o.back ? 'back' : 'front' });
-  p.lA1 = 0.08;
-  p.lB1 = 0.08;
-  // c = 1 at the moment the hands meet
-  const c = Math.pow(0.5 + 0.5 * Math.sin((t * 2.6 + (o.ph ?? 0)) * TAU), 1.6);
-  for (const A of ['A', 'B']) {
-    p[`a${A}1`] = lerp(0.16, 0.4, k);
-    p[`a${A}2`] = lerp(0.05, -3.17 + 0.25 * c, k);
-  }
-  p.y -= 1.5 * s * c * k;
-  p.head = (o.head ?? 0) + 0.012 * Math.sin((t * 0.7 + (o.ph ?? 0)) * TAU);
-  p.lean = o.lean ?? 0;
-  p.turn = o.turn ?? 0;
-  return figure(ctx, p, { id: o.id ?? 60, alpha: o.alpha, w: o.w });
+// screen-space version of a stage-plane light for camera cam
+export function spotOnScreen(cam, L, k) {
+  const a = project(cam, L.sx, L.sy, 0);
+  const b = project(cam, L.fx, L.fy, 0);
+  return { type: 'spot', sx: a[0], sy: a[1], fx: b[0], fy: b[1], rx: L.rx * b[2], ry: L.ry * b[2], k };
 }
 
-// how hard the audience looks at him: face, head and body turned to the middle
-export const gaze = (p) => ({ turn: -p.side * 1.0, head: -p.side * 0.1, lean: -p.side * 0.04 });
+// the glow that the stage throws back into the hall (screen space)
+export function stageWash(cam, k) {
+  const p = project(cam, TH.cx, TH.floor - 120, 0);
+  return { type: 'glow', x: p[0], y: p[1], r: 1500 * p[2], k: 0.32 * k };
+}
 
-// Draw the audience. o.clap(person) -> 0..1 clapping amount, o.alpha(person).
-export function audience(ctx, t, o = {}) {
-  for (const p of AUDIENCE) {
-    const a = o.alpha ? o.alpha(p) : 1;
-    if (a <= 0.01) continue;
-    person(ctx, p.x, p.g, p.s, t, { k: o.clap ? o.clap(p) : 1, ph: (p.i * 0.37) % 1, ...gaze(p), id: 60 + p.i, alpha: a });
+// camera keys (C = distance from the stage plane)
+const CLOSE = { x: TH.cx, y: 604, C: 300 };
+const FAR = { x: TH.cx, y: 322, C: 4300 };
+function cameraAt(t) {
+  if (t < 10) {
+    const k = smooth(t, 4.6, 10.0, (u) => 0.5 - 0.5 * Math.cos(Math.PI * u));
+    // log-space dolly so the speed feels even
+    const C = CLOSE.C * Math.pow(FAR.C / CLOSE.C, k);
+    const ky = clamp((C - CLOSE.C) / (FAR.C - CLOSE.C));
+    return { x: TH.cx, y: lerp(CLOSE.y, FAR.y, Math.pow(ky, 0.6)), C };
   }
+  // 我喜欢被看见: a medium shot, pushing in slowly
+  const C = lerp(600, 470, smooth(t, 10, 13.5, ease.sine));
+  return { x: TH.cx, y: lerp(596, 606, smooth(t, 10, 13.5)), C };
 }
 
-// Light on the stage: the spot plus a wide, faint spill so the audience
-// reads as shapes in the dark. k: 0..1 spot intensity.
-export function stageLights(k, o = {}) {
-  const fx = o.fx ?? STAGE.cx;
-  const rx = o.rx ?? STAGE.pool.rx;
-  return [
-    { type: 'spot', sx: o.sx ?? STAGE.src[0], sy: STAGE.src[1], fx, fy: STAGE.floor, rx, ry: STAGE.pool.ry * (rx / STAGE.pool.rx), k },
-    { type: 'glow', x: fx, y: STAGE.floor - 120, r: 700, k: 0.3 * k * (o.spill ?? 1) },
-  ];
+function boyPose(t) {
+  const s = TH.boyS;
+  const base = { x: TH.cx, y: standY(TH.floor, s), s, view: 'front', lA1: 0.07, lB1: 0.07, aA1: 0.18, aA2: 0.1, aB1: 0.18, aB2: 0.1 };
+  // the glare: his near arm flies up across his eyes, then comes down
+  // forearm flat across the brow, in front of the eyes
+  const shield = { aA1: 2.45, aA2: -3.95, head: 0.08, look: 0.6 };
+  const arms0 = { aA1: 0.18, aA2: 0.1 };
+  const sh = keys(t, [[BANG, 0], [BANG + 0.12, 1], [2.5, 1], [3.1, 0]], ease.out);
+  // palms opening a little, feeling the light
+  const feel = smooth(t, 3.6, 4.4) * (1 - smooth(t, 9.2, 10));
+  // 我喜欢被看见: arms open wide, face up
+  const open = smooth(t, 10.05, 10.9, ease.out);
+  const p = pose({ ...base });
+  p.aA1 = lerp(lerp(arms0.aA1, shield.aA1, sh), 0.55, feel);
+  p.aA2 = lerp(lerp(arms0.aA2, shield.aA2, sh), -0.35, feel);
+  p.aB1 = lerp(0.18 + 0.12 * sh, 0.55, feel);
+  p.aB2 = lerp(0.1, -0.35, feel);
+  p.aA1 = lerp(p.aA1, 1.95, open);
+  p.aB1 = lerp(p.aB1, 1.95, open);
+  p.aA2 = lerp(p.aA2, 0.18, open);
+  p.aB2 = lerp(p.aB2, 0.18, open);
+  // looking: into the glare, up at the light, out at the hall
+  p.look = keys(t, [[0, 0], [BANG, 0.6], [2.5, 0.6], [3.0, -1], [5.6, -1], [6.4, 0], [10, 0], [10.6, -1]]);
+  p.head = keys(t, [[0, 0], [BANG, 0.1], [2.5, 0.1], [3.1, -0.06], [5.6, -0.06], [6.4, 0], [10, 0], [10.7, -0.12]]) + noise1(t * 0.4, 3) * 0.03;
+  p.turn = keys(t, [[6.4, 0], [7.2, -0.6], [8.2, -0.6], [9.0, 0.6], [9.8, 0]]);
+  // a slow sway while he basks
+  p.lean = open * Math.sin((t - 10) * 1.6) * 0.06;
+  return p;
 }
 
-// His arms: hands on hips (elbows wide, hands at the waist on the body line)
-export const AKIMBO = { aA1: 0.72, aA2: -1.62, aB1: 0.72, aB2: -1.62 };
-
-// Tiptoe without floating: the hip rises by `rise`, and each leg gets a short
-// pointed toe down to the floor, so the tips stay on the floor line.
-export function toes(ctx, j, floor, s, rise) {
-  if (rise < 0.6) return;
-  const w = Math.max(2, 4.6 * Math.pow(s, 0.85));
-  for (const [i, f] of [[0, j.footA], [1, j.footB]]) {
-    path(ctx, [[f[0], f[1] - 1], [f[0] + (i ? -0.6 : 0.6), floor + 0.5]], { w: w * 0.9, wobble: 0, seed: 950 + i });
-  }
+function boyFace(t) {
+  return {
+    mouth: keys(t, [[0, 0], [BANG, -0.2], [2.9, -0.2], [3.5, 1], [10, 1]]),
+    eye: t > 10.9 && t < 12.6 ? 'closed' : 'dot',
+  };
 }
 
-const INSERT = [2.9, 4.1];
-
-// Spot intensity with the two-blink "click" at switch-on.
-function spotK(lt) {
-  if (lt < 0.5) return 0;
-  if (lt < 0.56) return 1;
-  if (lt < 0.64) return 0.15;
-  if (lt < 0.72) return 1;
-  return 1;
+// spot strength, size; the close at the end
+function spotState(t) {
+  if (t < BANG) return { k: 0, rx: SPOT.rx };
+  const shrink = smooth(t, 12.5, 13.5, ease.in);
+  const k = t > 13.55 ? 0 : 1;
+  return { k, rx: lerp(SPOT.rx, 4, shrink), ry: lerp(SPOT.ry, 1.5, shrink) };
 }
 
 export default {
   fadeOut: 0,
   draw(ctx, lt) {
-    let z = keys(lt, [[0, 1.45], [4.5, 1.45], [9, STAGE.cam.z]], ease.sine);
-    let cy = keys(lt, [[0, 640], [4.5, 640], [9, STAGE.cam.y]], ease.sine);
-    // a hard-cut insert: him in the beam, framed by the nearest clappers, as
-    // he smiles and looks from one side to the other
-    if (lt >= INSERT[0] && lt < INSERT[1]) {
-      z = 3.2 + 0.08 * prog(lt, INSERT[0], INSERT[1]);
-      cy = 658; // the floor just above the subtitle band
-    }
-    const k = spotK(lt);
-    camera(ctx, { x: STAGE.cx, y: cy, z }, () => {
-      // floor
-      path(ctx, [[-200, STAGE.floor], [W + 200, STAGE.floor]], { w: 3.4, seed: 900, wobble: 0.6 });
+    const t = Math.max(0, lt);
+    const cam = cameraAt(t);
+    const sp = spotState(t);
+    // BANG: a jolt of the whole frame for a few frames
+    const jolt = t > BANG ? Math.exp(-(t - BANG) / 0.09) : 0;
+    ctx.save();
+    if (jolt > 0.01) ctx.translate(noise1(t * 60, 1) * 14 * jolt, noise1(t * 60, 2) * 10 * jolt);
 
-      audience(ctx, lt, { clap: (p) => smooth(lt, p.start, p.start + 0.35) });
-
-      // the boy
-      const s = STAGE.boyS;
-      // shy: hands behind his back (upper arms only, a little back), a sway;
-      // then the hands come round onto his hips
-      const shy = { aA1: 0.2, aA2: -0.9, aB1: 0.2, aB2: -0.9 };
-      const arms = keys(lt, [[0, shy], [4.8, shy], [5.4, AKIMBO]]);
-      const fore = smooth(lt, 4.85, 5.3); // how much forearm shows
-      const sway = 0.03 * Math.sin((lt - 0.5) * 2.3) * (1 - smooth(lt, 4.3, 4.8));
-      const turn = keys(lt, [[0, 0], [1.6, 0], [2.2, -0.7], [2.9, -0.7], [3.5, 0.7], [4.2, 0.7], [4.8, 0]]);
-      const look = keys(lt, [[0, 0], [0.8, -1], [1.5, -1], [1.9, 0], [4.8, 0], [5.4, -0.45]]);
-      const mouth = keys(lt, [[0, 0], [3.0, 0], [3.5, 1]]);
-      // up on his toes, two small bounces (heels down, up again), heels down
-      const rise = keys(lt, [[6.1, 0], [6.5, 7], [6.85, 7], [7.05, 1], [7.25, 7], [7.45, 1], [7.65, 6.5], [8.0, 6.5], [8.5, 0]]);
-      const head = keys(lt, [[0, 0], [5.5, 0], [6.0, -0.08]]);
-      const p = pose({
-        x: STAGE.cx, y: standY(STAGE.floor, s) - rise, s, view: 'front',
-        ...arms, turn, look, head, lean: sway,
-        lA1: 0.06, lB1: 0.06,
-      });
-      const j = figure(ctx, p, { id: 1, cowlick: true, mouth, arms: fore < 1 ? 'upper' : undefined });
-      if (fore > 0 && fore < 1) {
-        // the hands coming round from behind his back
-        const w = Math.max(2, 4.6 * Math.pow(s, 0.85));
-        path(ctx, [j.elbowA, j.handA], { w, draw: fore, seed: 960, wobble: 0.6 });
-        path(ctx, [j.elbowB, j.handB], { w, draw: fore, seed: 961, wobble: 0.6 });
-      }
-      toes(ctx, j, STAGE.floor, s, rise);
-
-      // pitch black until the light clicks on; the spill (the faces in the
-      // dark) comes up as the clapping starts
-      stage(ctx, stageLights(k, { spill: smooth(lt, 0.6, 1.9) }), { dark: STAGE.dark + (1 - k) * 0.15 });
+    hallDark(ctx);
+    camera(ctx, stageCam(cam), () => {
+      stagePlane(ctx, t);
+      const s = boyFace(t);
+      const p = boyPose(t);
+      const j = figure(ctx, p, { id: 1, cowlick: true, mouth: s.mouth, eye: s.eye });
+      // the shielding forearm goes in front of his face
+      if (p.aA1 > 1.4) path(ctx, [j.elbowA, j.handA], { w: Math.max(2, 4.6 * Math.pow(p.s, 0.85)), seed: 41 + 5, wobble: 1.1 });
     });
+    // the hall
+    const hall = clamp((cam.C - 500) / 900);
+    haze(ctx, cam, spotState(t).k * lerp(0.25, 1, smooth(t, 4.8, 8.5)) * (1 - smooth(t, 12.4, 13.4)));
+    const rimList = auditorium(ctx, cam, t, {
+      lean: (seat, row) => (seat.h > 0.82 && row.k % 3 === 1 ? 0.18 * smooth(t, 7, 8) : 0),
+      rim: 1,
+    });
+    // lights (screen space)
+    const lights = [];
+    if (sp.k > 0) {
+      lights.push(spotOnScreen(cam, { ...SPOT, rx: sp.rx, ry: sp.ry }, sp.k));
+      // the hall's glow comes up as we pull back; close up only the beam lights him
+      lights.push(stageWash(cam, sp.k * lerp(0.12, 1, smooth(t, 4.8, 8.5)) * (1 - smooth(t, 12.4, 13.4))));
+      lights.push(...sconces(cam, hall * sp.k * 0.8));
+    }
+    stage(ctx, lights, { dark: t < BANG ? 1 : lerp(0.9, 0.86, hall), beams: 1 });
+    // rim light on the audience, and dust in the beam
+    rims(ctx, rimList, sp.k * (1 - smooth(t, 12.4, 13.2)));
+    if (sp.k > 0) {
+      const b = spotOnScreen(cam, { ...SPOT, rx: sp.rx, ry: sp.ry }, 1);
+      dust(ctx, { sx: b.sx, sy: b.sy, fx: b.fx, fy: b.fy, rx: b.rx, ds: Math.min(3, F_DS(cam)) }, t, 0.9, 70);
+    }
+    ctx.restore();
+
+    // the flash of the bang
+    if (t > BANG && t < BANG + 0.6) {
+      const f = Math.exp(-(t - BANG) / 0.07);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'lighter';
+      const p = project(cam, TH.cx, TH.floor - 80, 0);
+      const g = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], 900);
+      g.addColorStop(0, `rgba(255,250,236,${0.75 * f})`);
+      g.addColorStop(1, 'rgba(255,250,236,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+
+    // the title, in the dark
+    const ta = Math.min(smooth(t, 13.5, 14.4), 1 - smooth(t, 15.2, 16.0));
+    if (ta > 0.001) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const str = '我还是想被看见';
+      const chars = [...str];
+      const size = 104;
+      const gap = 128;
+      const x0 = W / 2 - ((chars.length - 1) * gap) / 2;
+      chars.forEach((ch, i) => {
+        const a = ta * smooth(t, 13.4 + i * 0.09, 13.9 + i * 0.09);
+        ctx.shadowColor = 'rgba(255,248,230,0.5)';
+        ctx.shadowBlur = 26;
+        text(ctx, ch, x0 + i * gap, H / 2 - 20, { size, color: '#efe8da', alpha: a });
+      });
+      ctx.restore();
+    }
   },
 };
+
+// dust speck size follows the camera so close up the specks are larger
+function F_DS(cam) {
+  return Math.max(0.6, 1000 / cam.C);
+}
+

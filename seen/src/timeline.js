@@ -1,19 +1,18 @@
-// 我还是想被看见 — scene timing follows the script (../分镜.md) and the
+// 我还是想被看见 (second version) — scene timing follows the script (../分镜.md) and the
 // subtitle lines (../lines.json). No sound: music and narration are added later.
 // Each scene module (scenes/<id>.js) default-exports
 // { draw(ctx, lt, info), fadeIn?, fadeOut? }  (see GUIDE.md)
 
-export const DURATION = 88.0;
+export const DURATION = 124.0;
 
 export const SCENES = [
-  { id: 's01', start: 0.0, end: 9.0 }, // the child in the spotlight
-  { id: 's02', start: 9.0, end: 19.0 }, // he grows; the light moves; he chases
-  { id: 's03', start: 19.0, end: 31.0 }, // chasing a number at the computer
-  { id: 's04', start: 31.0, end: 43.0 }, // shuts the screen; walks alone, stiffly
-  { id: 's05', start: 43.0, end: 52.0 }, // side tracking: his steps settle
-  { id: 's06', start: 52.0, end: 64.0 }, // cheers, a companion, a small light — he panics
-  { id: 's07', start: 64.0, end: 77.0 }, // he accepts it; goodbye; walks on alone
-  { id: 's08', start: 77.0, end: DURATION }, // at the computer, making this video
+  { id: 's01', start: 0.0, end: 16.0 }, // the theatre: bang, the boy in the spotlight, the audience; title
+  { id: 's02', start: 16.0, end: 40.0 }, // he grows, his light shrinks; brighter lights; he chases, gets lost
+  { id: 's03', start: 40.0, end: 54.0 }, // the screen's light; post after post; it fades; he shuts the lid
+  { id: 's04', start: 54.0, end: 72.0 }, // the time tunnel: people with brighter lights stream past him
+  { id: 's05', start: 72.0, end: 92.0 }, // he stops chasing; his own work; a brighter light passes, he goes on
+  { id: 's06', start: 92.0, end: 108.0 }, // a light lands on him; joy, doubt; it comes and goes, he keeps working
+  { id: 's07', start: 108.0, end: DURATION }, // back on the empty stage; daylight; the spotlight behind him; he walks on
 ];
 
 export async function loadScenes() {
